@@ -1,0 +1,52 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "docuflow-backend"
+version = "0.1.0"
+description = "Production-grade Document Intelligence and AI Ingestion Platform"
+authors = ["DocuFlow AI Team <team@docuflow.ai>"]
+readme = "README.md"
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = ">=3.11"
+fastapi = "^0.111.0"
+uvicorn = {extras = ["standard"], version = "^0.30.0"}
+pydantic = "^2.7.0"
+pydantic-settings = "^2.3.0"
+sqlalchemy = {extras = ["asyncio"], version = "^2.0.30"}
+asyncpg = "^0.29.0"
+alembic = "^1.13.1"
+structlog = "^24.2.0"
+python-multipart = "^0.0.9"
+httpx = "^0.27.0"
+redis = "^5.0.4"
+celery = "^5.4.0"
+qdrant-client = "^1.9.1"
+boto3 = "^1.34.100"
+aiosqlite = "^0.20.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.0"
+pytest-asyncio = "^0.23.6"
+pytest-cov = "^5.0.0"
+ruff = "^0.4.4"
+mypy = "^1.10.0"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
