@@ -4,13 +4,14 @@ DocuFlow AI — Application Configuration.
 Uses Pydantic Settings to validate and load all environment variables.
 Application will refuse to start if required settings are missing or invalid.
 """
+
 from __future__ import annotations
 
 import json
 from functools import lru_cache
 from typing import Any
 
-from pydantic import AnyHttpUrl, Field, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -59,9 +60,11 @@ class Settings(BaseSettings):
     # Database — PostgreSQL
     # -------------------------------------------------------------------------
     database_url: str = Field(
+        default="postgresql+asyncpg://postgres:postgres@localhost:5432/docuflow",
         description="Async SQLAlchemy database URL (postgresql+asyncpg://...)",
     )
     database_sync_url: str = Field(
+        default="postgresql://postgres:postgres@localhost:5432/docuflow",
         description="Synchronous PostgreSQL URL used by Alembic migrations",
     )
     db_pool_size: int = Field(default=20)
@@ -78,9 +81,9 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Object Storage — S3 / MinIO
     # -------------------------------------------------------------------------
-    s3_endpoint_url: str | None = Field(default=None)
-    s3_access_key_id: str = Field(description="S3 / MinIO access key")
-    s3_secret_access_key: str = Field(description="S3 / MinIO secret key")
+    s3_endpoint_url: str | None = Field(default="http://localhost:9000")
+    s3_access_key_id: str = Field(default="minioadmin", description="S3 / MinIO access key")
+    s3_secret_access_key: str = Field(default="minioadmin", description="S3 / MinIO secret key")
     s3_bucket_documents: str = Field(default="docuflow-documents")
     s3_region: str = Field(default="us-east-1")
     s3_secure: bool = Field(default=False)
@@ -96,7 +99,10 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Security — JWT
     # -------------------------------------------------------------------------
-    jwt_secret_key: str = Field(description="Secret key for signing JWT tokens")
+    jwt_secret_key: str = Field(
+        default="dev-jwt-secret-key-at-least-32-chars-long-docuflow-platform",
+        description="Secret key for signing JWT tokens",
+    )
     jwt_algorithm: str = Field(default="HS256")
     access_token_expire_minutes: int = Field(default=15)
     refresh_token_expire_days: int = Field(default=7)
