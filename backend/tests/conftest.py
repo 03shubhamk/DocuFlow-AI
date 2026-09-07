@@ -6,6 +6,7 @@ Provides:
 - FastAPI TestClient
 - Settings override for testing environment
 """
+
 from __future__ import annotations
 
 import pytest
