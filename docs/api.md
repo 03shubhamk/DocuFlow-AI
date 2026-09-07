@@ -99,64 +99,93 @@ Every non-2xx response adheres to the RFC 7807 Problem Details standard:
 ### 4.1 Authentication (`/api/v1/auth`)
 
 #### `POST /api/v1/auth/register`
-Creates a new tenant and administrative user.
-- **Request Body**:
+Creates a new user account, optionally assigning them to a new organizational tenant workspace.
+- **Request Body** (`application/json`):
   ```json
   {
-    "organization_name": "Acme Corp",
-    "email": "admin@acme.com",
-    "password": "SecurePassword123!",
-    "full_name": "Jane Doe"
+    "email": "user@example.com",
+    "password": "StrongPassword123!",
+    "full_name": "Jane Doe",
+    "tenant_name": "Acme Corp",
+    "role": "USER"
   }
   ```
 - **Response**: `201 Created`
   ```json
   {
-    "user_id": "7ca64e81-b518-4b72-97fc-112233445566",
+    "id": "7ca64e81-b518-4b72-97fc-112233445566",
     "tenant_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "email": "admin@acme.com",
-    "role": "ADMIN",
-    "created_at": "2026-09-06T12:00:00Z"
+    "email": "user@example.com",
+    "full_name": "Jane Doe",
+    "role": "USER",
+    "is_active": true,
+    "created_at": "2026-09-08T00:00:00Z"
   }
   ```
 
 #### `POST /api/v1/auth/login`
-Authenticates a user and issues tokens.
+Authenticates a user with email and password, issuing an access JWT (15m) and rotating refresh token (7d).
 - **Request Body** (`application/json`):
   ```json
   {
-    "email": "admin@acme.com",
-    "password": "SecurePassword123!"
+    "email": "user@example.com",
+    "password": "StrongPassword123!"
   }
   ```
 - **Response**: `200 OK`
   ```json
   {
-    "access_token": "eyJhbGciOiJIUzI1NiIs...",
+    "access_token": "eyJhbGciOiJIUzI1NiIsIn...",
+    "refresh_token": "u_k9a2j3N-8x...",
     "token_type": "bearer",
-    "expires_in": 900,
-    "user": {
-      "id": "7ca64e81-b518-4b72-97fc-112233445566",
-      "email": "admin@acme.com",
-      "full_name": "Jane Doe",
-      "role": "ADMIN",
-      "tenant_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
-    }
+    "expires_in": 900
   }
   ```
-- **Cookies Set**: `refresh_token` (HTTP-only, Secure, SameSite=Strict).
 
 #### `POST /api/v1/auth/refresh`
-Refreshes the access token using the HTTP-only cookie.
-- **Response**: `200 OK` `{ "access_token": "...", "expires_in": 900 }`
+Rotates an active refresh token. Revokes the old refresh token in the database and returns a brand-new token pair.
+- **Request Body** (`application/json`):
+  ```json
+  {
+    "refresh_token": "u_k9a2j3N-8x..."
+  }
+  ```
+- **Response**: `200 OK`
+  ```json
+  {
+    "access_token": "eyJhbGciOiJIUzI1NiIsIn...",
+    "refresh_token": "v_m8b3k4O-9y...",
+    "token_type": "bearer",
+    "expires_in": 900
+  }
+  ```
 
 #### `POST /api/v1/auth/logout`
-Revokes the refresh token and clears session cookies.
-- **Response**: `204 No Content`
+Revokes the refresh token session in the database.
+- **Headers**: `Authorization: Bearer <access_token>`
+- **Request Body** (optional): `{ "refresh_token": "..." }`
+- **Response**: `200 OK`
+  ```json
+  {
+    "detail": "Successfully logged out."
+  }
+  ```
 
 #### `GET /api/v1/auth/me`
 Retrieves the profile and permissions of the currently authenticated user.
-- **Response**: `200 OK` User profile object.
+- **Headers**: `Authorization: Bearer <access_token>`
+- **Response**: `200 OK`
+  ```json
+  {
+    "id": "7ca64e81-b518-4b72-97fc-112233445566",
+    "tenant_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "email": "user@example.com",
+    "full_name": "Jane Doe",
+    "role": "USER",
+    "is_active": true,
+    "created_at": "2026-09-08T00:00:00Z"
+  }
+  ```
 
 ---
 
