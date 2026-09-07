@@ -5,6 +5,7 @@ DocuFlow AI — FastAPI Request/Response Middleware.
 - Binds correlation context vars to structlog.
 - Handles global exception mapping (DocuFlowException -> RFC 7807).
 """
+
 from __future__ import annotations
 
 import time
