@@ -4,6 +4,7 @@ DocuFlow AI — Domain Gateway Interfaces (Ports).
 Abstract base classes defining the contracts that infrastructure adapters must fulfill.
 The Domain layer depends only on these interfaces, never on concrete implementations.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
