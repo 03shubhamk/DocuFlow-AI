@@ -4,6 +4,7 @@ DocuFlow AI — Structured Logging Configuration.
 Configures structlog with JSON output in production and pretty-print in dev.
 Automatically binds correlation_id, environment, and service name to all log records.
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,9 +53,9 @@ def configure_logging(log_level: str = "INFO", environment: str = "development")
 
     structlog.configure(
         processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(log_level_int),
+        wrapper_class=structlog.stdlib.BoundLogger,
         context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
