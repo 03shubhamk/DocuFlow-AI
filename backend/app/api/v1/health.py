@@ -6,6 +6,7 @@ Provides:
 - /health/ready — Deep dependency readiness check
 - /health/info  — Build info and version metadata
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -87,8 +88,7 @@ async def readiness(settings: SettingsDep, db: DbSession) -> JSONResponse:
             config=Config(connect_timeout=2, read_timeout=2),
         )
         # List buckets is a lightweight connectivity check
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: s3.list_buckets())
+        await asyncio.to_thread(s3.list_buckets)
         checks["minio"] = {"status": "ok"}
     except Exception as e:
         logger.error("health_check_minio_failed", error=str(e))
