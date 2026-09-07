@@ -1,4 +1,5 @@
 """Jobs API stub — Phase 3 implementation."""
+
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
