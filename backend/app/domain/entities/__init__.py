@@ -32,6 +32,7 @@ class UserRole(str, Enum):
     """RBAC roles for platform users."""
 
     ADMIN = "ADMIN"
+    USER = "USER"
     EDITOR = "EDITOR"
     VIEWER = "VIEWER"
 
@@ -67,10 +68,30 @@ class User:
     email: str
     hashed_password: str
     full_name: str
-    role: UserRole = UserRole.VIEWER
+    role: UserRole = UserRole.USER
     is_active: bool = True
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass
+class RefreshToken:
+    """Represents a persisted refresh token for session management and rotation."""
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    token_hash: str
+    expires_at: datetime
+    revoked_at: datetime | None = None
+    created_at: datetime = field(default_factory=datetime.utcnow)
+
+    @property
+    def is_active(self) -> bool:
+        """Returns True if the token is not revoked and not expired."""
+        from datetime import timezone
+
+        now = datetime.now(timezone.utc) if self.expires_at.tzinfo else datetime.utcnow()
+        return self.revoked_at is None and self.expires_at > now
 
 
 @dataclass
@@ -90,6 +111,18 @@ class Document:
     current_version_id: uuid.UUID | None = None
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
+
+    def is_accessible_by(self, user: User) -> bool:
+        """Enforces multi-tenant and account/user document isolation.
+
+        Admins can access all documents in their tenant.
+        Regular users can only access their own documents within their tenant.
+        """
+        if self.tenant_id != user.tenant_id:
+            return False
+        if user.role == UserRole.ADMIN:
+            return True
+        return self.owner_id == user.id
 
 
 @dataclass
