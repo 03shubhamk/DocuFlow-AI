@@ -1,4 +1,5 @@
 """Documents API stub — Phase 3 implementation."""
+
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/documents", tags=["documents"])
