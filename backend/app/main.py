@@ -9,6 +9,7 @@ Builds and configures the FastAPI application with:
 - Global exception handlers (RFC 7807)
 - Lifespan events (startup / shutdown)
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -16,7 +17,6 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.middleware import (
     CorrelationIdMiddleware,
@@ -81,7 +81,7 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------
     # Exception Handlers
     # ------------------------------------------------------------------
-    app.add_exception_handler(DocuFlowException, docuflow_exception_handler)
+    app.add_exception_handler(DocuFlowException, docuflow_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
     # ------------------------------------------------------------------
