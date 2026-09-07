@@ -4,10 +4,11 @@ DocuFlow AI — Async Database Session Factory.
 Creates the SQLAlchemy async engine and session factory.
 Workers use NullPool to avoid connection leaks across Celery forked processes.
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -26,7 +27,7 @@ def build_engine(settings: Settings, use_null_pool: bool = False):
         settings: Application settings instance.
         use_null_pool: If True, use NullPool (for Celery workers).
     """
-    kwargs = {
+    kwargs: dict[str, Any] = {
         "echo": settings.is_development,
         "future": True,
     }
