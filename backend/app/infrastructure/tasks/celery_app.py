@@ -5,6 +5,7 @@ Defines the Celery worker application, queue configuration,
 and task routing. No processing tasks are implemented here yet
 (Phase 4). This foundation enables the worker container to start.
 """
+
 from __future__ import annotations
 
 from celery import Celery
