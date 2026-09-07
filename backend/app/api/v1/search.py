@@ -1,4 +1,5 @@
 """Search API stub — Phase 5 implementation."""
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
