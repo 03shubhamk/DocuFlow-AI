@@ -4,6 +4,7 @@ DocuFlow AI — SQLAlchemy ORM Models.
 Defines all database table models mapped to the domain ERD.
 Uses SQLAlchemy 2.0 declarative style with typed columns.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -12,6 +13,7 @@ from typing import Any
 
 from sqlalchemy import (
     ARRAY,
+    JSON,
     Boolean,
     DateTime,
     ForeignKey,
@@ -20,10 +22,17 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Uuid,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+# Helper cross-dialect types: PostgreSQL optimized in prod, JSON/Uuid fallback in tests
+JSONType = JSON().with_variant(JSONB, "postgresql")
+ArrayIntType = JSON().with_variant(ARRAY(Integer), "postgresql")
+UUIDType = Uuid(as_uuid=True).with_variant(PG_UUID(as_uuid=True), "postgresql")
 
 
 class Base(DeclarativeBase):
@@ -35,9 +44,7 @@ class Base(DeclarativeBase):
 class TenantModel(Base):
     __tablename__ = "tenants"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -59,11 +66,9 @@ class UserModel(Base):
         Index("ix_users_tenant_email", "tenant_id", "email"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
     )
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -88,14 +93,12 @@ class DocumentModel(Base):
         Index("ix_docs_tenant_checksum", "tenant_id", "checksum_sha256"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
     )
     owner_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        UUIDType, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -103,9 +106,7 @@ class DocumentModel(Base):
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    current_version_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
-    )
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(UUIDType, nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -137,11 +138,9 @@ class DocumentVersionModel(Base):
         Index("ix_doc_versions_doc_id", "document_id", "version_number"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
     version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -158,20 +157,20 @@ class DocumentAssetModel(Base):
     __tablename__ = "document_assets"
     __table_args__ = (Index("ix_assets_version_type", "version_id", "asset_type"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
     version_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=False
     )
     asset_type: Mapped[str] = mapped_column(String(50), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    asset_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONType, nullable=False, default=dict
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -187,14 +186,12 @@ class ProcessingJobModel(Base):
         Index("ix_jobs_celery_task_id", "celery_task_id"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
     version_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="UPLOADED")
     stage: Mapped[str] = mapped_column(String(50), nullable=False, default="INGESTION")
@@ -224,21 +221,19 @@ class DocumentChunkModel(Base):
         Index("ix_chunks_version_index", "version_id", "chunk_index"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
     version_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=False
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    heading_hierarchy: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
-    page_numbers: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False, default=list)
-    chunk_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    heading_hierarchy: Mapped[list[Any]] = mapped_column(JSONType, nullable=False, default=list)
+    page_numbers: Mapped[list[int]] = mapped_column(ArrayIntType, nullable=False, default=list)
+    chunk_metadata: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -256,18 +251,16 @@ class EmbeddingRecordModel(Base):
         Index("ix_embeddings_qdrant_point", "qdrant_point_id"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     chunk_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("document_chunks.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("document_chunks.id", ondelete="CASCADE"), nullable=False
     )
     document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     vector_dimension: Mapped[int] = mapped_column(Integer, nullable=False)
-    qdrant_point_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    qdrant_point_id: Mapped[uuid.UUID] = mapped_column(UUIDType, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -281,14 +274,12 @@ class ProcessingErrorModel(Base):
     __tablename__ = "processing_errors"
     __table_args__ = (Index("ix_errors_job_created", "job_id", "created_at"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("processing_jobs.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("processing_jobs.id", ondelete="CASCADE"), nullable=False
     )
     document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
     stage: Mapped[str] = mapped_column(String(50), nullable=False)
     error_type: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -304,25 +295,21 @@ class ProcessingErrorModel(Base):
 
 class AuditLogModel(Base):
     __tablename__ = "audit_logs"
-    __table_args__ = (
-        Index("ix_audit_tenant_action_created", "tenant_id", "action", "created_at"),
-    )
+    __table_args__ = (Index("ix_audit_tenant_action_created", "tenant_id", "action", "created_at"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+        UUIDType, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
     )
     user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        UUIDType, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(UUIDType, nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
