@@ -4,6 +4,7 @@ DocuFlow AI — Auth API Stub.
 Authentication endpoints are scaffolded here.
 Full implementation (JWT login, refresh, register) is Phase 3.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter
