@@ -73,7 +73,7 @@ class UserModel(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(String(50), nullable=False, default="VIEWER")
+    role: Mapped[str] = mapped_column(String(50), nullable=False, default="USER")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -84,6 +84,9 @@ class UserModel(Base):
 
     tenant: Mapped[TenantModel] = relationship("TenantModel", back_populates="users")
     documents: Mapped[list[DocumentModel]] = relationship("DocumentModel", back_populates="owner")
+    refresh_tokens: Mapped[list[RefreshTokenModel]] = relationship(
+        "RefreshTokenModel", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class DocumentModel(Base):
@@ -313,3 +316,24 @@ class AuditLogModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class RefreshTokenModel(Base):
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        Index("ix_refresh_tokens_token_hash", "token_hash"),
+        Index("ix_refresh_tokens_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    user: Mapped[UserModel] = relationship("UserModel", back_populates="refresh_tokens")
