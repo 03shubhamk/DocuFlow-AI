@@ -6,6 +6,7 @@ Provides reusable Depends() factories for:
 - Settings
 - Authenticated user contexts (Phase 3+)
 """
+
 from __future__ import annotations
 
 from typing import Annotated, AsyncGenerator
