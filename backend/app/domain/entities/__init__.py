@@ -4,6 +4,7 @@ DocuFlow AI — Domain Entities.
 Pure Python dataclasses with no external framework dependencies.
 These represent the core business concepts of the domain.
 """
+
 from __future__ import annotations
 
 import uuid
