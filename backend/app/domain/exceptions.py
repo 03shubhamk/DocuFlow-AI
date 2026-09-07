@@ -4,6 +4,7 @@ DocuFlow AI — Domain Exceptions.
 All custom application exceptions inherit from DocuFlowException.
 Error responses conform to RFC 7807 Problem Details format.
 """
+
 from __future__ import annotations
 
 
