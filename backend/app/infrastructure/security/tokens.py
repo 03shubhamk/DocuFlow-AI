@@ -3,10 +3,11 @@ DocuFlow AI — JWT & Password Security.
 
 Provides password hashing with bcrypt and JWT access/refresh token management.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
+from typing import Any
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -55,7 +56,7 @@ def create_access_token(
     return token, expires_at
 
 
-def decode_access_token(settings: Settings, token: str) -> dict:
+def decode_access_token(settings: Settings, token: str) -> dict[str, Any]:
     """Decode and validate a JWT access token.
 
     Returns:
@@ -76,5 +77,5 @@ def decode_access_token(settings: Settings, token: str) -> dict:
         return payload
     except JWTError as e:
         if "expired" in str(e).lower():
-            raise TokenExpiredException()
-        raise InvalidCredentialsException()
+            raise TokenExpiredException() from e
+        raise InvalidCredentialsException() from e
