@@ -107,6 +107,53 @@ class DuplicateDocumentException(DocuFlowException):
         )
 
 
+class UserAlreadyExistsException(DocuFlowException):
+    def __init__(self, email: str) -> None:
+        super().__init__(
+            message=f"A user with email '{email}' already exists.",
+            status_code=409,
+            error_type="https://docuflow.ai/errors/user-already-exists",
+        )
+
+
+class UserNotFoundException(DocuFlowException):
+    def __init__(self, identifier: str) -> None:
+        super().__init__(
+            message=f"User '{identifier}' was not found.",
+            status_code=404,
+            error_type="https://docuflow.ai/errors/user-not-found",
+        )
+
+
+class InvalidTokenException(DocuFlowException):
+    def __init__(self, message: str = "Invalid or malformed authentication token.") -> None:
+        super().__init__(
+            message=message,
+            status_code=401,
+            error_type="https://docuflow.ai/errors/invalid-token",
+        )
+
+
+class UnauthorizedException(DocuFlowException):
+    def __init__(self, message: str = "Authentication required.") -> None:
+        super().__init__(
+            message=message,
+            status_code=401,
+            error_type="https://docuflow.ai/errors/unauthorized",
+        )
+
+
+class ForbiddenException(DocuFlowException):
+    def __init__(
+        self, message: str = "You do not have permission to access this resource."
+    ) -> None:
+        super().__init__(
+            message=message,
+            status_code=403,
+            error_type="https://docuflow.ai/errors/forbidden",
+        )
+
+
 class StorageException(DocuFlowException):
     def __init__(self, message: str) -> None:
         super().__init__(
