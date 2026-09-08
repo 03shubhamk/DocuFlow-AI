@@ -19,6 +19,7 @@ from app.infrastructure.database.models import (
     DocumentAssetModel,
     DocumentModel,
     DocumentVersionModel,
+    ProcessingErrorModel,
     ProcessingJobModel,
     RefreshTokenModel,
     TenantModel,
@@ -334,6 +335,24 @@ class DocumentVersionRepository:
         await self.session.flush()
         return version
 
+    async def get_by_id(self, version_id: uuid.UUID) -> DocumentVersionModel | None:
+        stmt = select(DocumentVersionModel).where(DocumentVersionModel.id == version_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_latest_for_document(self, document_id: uuid.UUID) -> DocumentVersionModel | None:
+        from sqlalchemy import desc
+
+        stmt = (
+            select(DocumentVersionModel)
+            .where(DocumentVersionModel.document_id == document_id)
+            .order_by(desc(DocumentVersionModel.version_number))
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+
 
 class DocumentAssetRepository:
     """Repository for Document secondary assets."""
@@ -363,6 +382,22 @@ class DocumentAssetRepository:
         self.session.add(asset)
         await self.session.flush()
         return asset
+
+    async def delete_derivative_assets(self, version_id: uuid.UUID) -> None:
+        """Idempotently remove generated secondary derivative assets (non-ORIGINAL) for a version."""
+        from sqlalchemy import delete
+
+        stmt = delete(DocumentAssetModel).where(
+            DocumentAssetModel.version_id == version_id,
+            DocumentAssetModel.asset_type != "ORIGINAL",
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+
+    async def list_by_version(self, version_id: uuid.UUID) -> list[DocumentAssetModel]:
+        stmt = select(DocumentAssetModel).where(DocumentAssetModel.version_id == version_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
 
 class ProcessingJobRepository:
@@ -408,6 +443,70 @@ class ProcessingJobRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def update_status(
+        self,
+        job_id: uuid.UUID,
+        status: str,
+        stage: str,
+        progress_percent: int,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
+        celery_task_id: str | None = None,
+    ) -> None:
+        """Update job lifecycle status, stage, progress and timestamps."""
+        values: dict[str, Any] = {
+            "status": status,
+            "stage": stage,
+            "progress_percent": progress_percent,
+            "updated_at": datetime.now(timezone.utc),
+        }
+        if started_at is not None:
+            values["started_at"] = started_at
+        if completed_at is not None:
+            values["completed_at"] = completed_at
+        if celery_task_id is not None:
+            values["celery_task_id"] = celery_task_id
+
+        stmt = update(ProcessingJobModel).where(ProcessingJobModel.id == job_id).values(**values)
+        await self.session.execute(stmt)
+        await self.session.flush()
+
+    async def create_error(
+        self,
+        job_id: uuid.UUID,
+        document_id: uuid.UUID,
+        stage: str,
+        error_type: str,
+        error_message: str,
+        stack_trace: str | None = None,
+        retryable: bool = False,
+    ) -> ProcessingErrorModel:
+        """Record a structured processing error."""
+        error = ProcessingErrorModel(
+            job_id=job_id,
+            document_id=document_id,
+            stage=stage,
+            error_type=error_type,
+            error_message=error_message,
+            stack_trace=stack_trace,
+            retryable=retryable,
+        )
+        self.session.add(error)
+        await self.session.flush()
+        return error
+
+    async def get_errors_for_job(self, job_id: uuid.UUID) -> list[ProcessingErrorModel]:
+        from sqlalchemy import desc
+
+        stmt = (
+            select(ProcessingErrorModel)
+            .where(ProcessingErrorModel.job_id == job_id)
+            .order_by(desc(ProcessingErrorModel.created_at))
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
 
 
 class AuditLogRepository:
