@@ -9,6 +9,7 @@ from pydantic import ValidationError
 class TestSettings:
     def test_settings_load_from_env(self, monkeypatch):
         """Settings should load all required vars from environment."""
+        monkeypatch.setenv("ENVIRONMENT", "development")
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@host:5432/db")
         monkeypatch.setenv("DATABASE_SYNC_URL", "postgresql://u:p@host:5432/db")
         monkeypatch.setenv("S3_ACCESS_KEY_ID", "key")
