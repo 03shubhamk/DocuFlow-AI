@@ -29,6 +29,9 @@ from app.application.documents.schemas import (
     DocumentListResponse,
     DocumentMessageResponse,
     DocumentUploadResponse,
+    ProcessDocumentRequest,
+    ProcessingJobSummary,
+    ProcessingStatusResponse,
 )
 from app.application.documents.service import DocumentService
 
@@ -145,4 +148,45 @@ async def delete_document(
         ip_address=client_ip,
         user_agent=user_agent,
     )
+
+
+@router.post(
+    "/{document_id}/process",
+    response_model=ProcessingJobSummary,
+    summary="Trigger asynchronous document intelligence processing",
+    description="Queue the document version for Docling parsing, OCR, and structural extraction.",
+)
+async def process_document(
+    document_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    storage: StorageDep,
+    body: ProcessDocumentRequest | None = None,
+) -> ProcessingJobSummary:
+    service = DocumentService(session=db, storage=storage)
+    return await service.trigger_processing(
+        document_id=document_id,
+        current_user=current_user.to_entity(),
+        options=body,
+    )
+
+
+@router.get(
+    "/{document_id}/processing-status",
+    response_model=ProcessingStatusResponse,
+    summary="Get document processing status and diagnostics",
+    description="Retrieve real-time processing stage, progress percentage, error logs, and generated artifacts.",
+)
+async def get_processing_status(
+    document_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    storage: StorageDep,
+) -> ProcessingStatusResponse:
+    service = DocumentService(session=db, storage=storage)
+    return await service.get_processing_status(
+        document_id=document_id,
+        current_user=current_user.to_entity(),
+    )
+
 
