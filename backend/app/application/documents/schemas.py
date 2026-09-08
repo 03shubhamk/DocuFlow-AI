@@ -112,3 +112,44 @@ class DocumentMessageResponse(BaseModel):
 
     message: str
     document_id: uuid.UUID
+
+
+class ProcessingErrorSummary(BaseModel):
+    """Summary of a processing failure error record."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    stage: str
+    error_type: str
+    error_message: str
+    retryable: bool
+    created_at: datetime
+
+
+class ProcessDocumentRequest(BaseModel):
+    """Optional configuration overrides for document processing."""
+
+    do_ocr: bool | None = None
+    ocr_provider: str | None = None
+    extract_figures: bool = True
+    do_table_structure: bool = True
+
+
+class ProcessingStatusResponse(BaseModel):
+    """Detailed status tracking response for document processing."""
+
+    document_id: uuid.UUID
+    version_id: uuid.UUID
+    job_id: uuid.UUID
+    status: str
+    stage: str
+    progress_percent: int
+    retry_count: int
+    max_retries: int
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    duration_ms: float | None = None
+    errors: list[ProcessingErrorSummary] = Field(default_factory=list)
+    artifacts_created: list[str] = Field(default_factory=list)
+
