@@ -332,7 +332,61 @@ Soft-deletes a document and records the deletion in the immutable audit log. Sof
   }
   ```
 
+#### `POST /api/v1/documents/{document_id}/process`
+Queues a document version for asynchronous Document Intelligence processing (Docling layout AST, tables, OCR, figures, and markdown).
+- **Headers**: `Authorization: Bearer <token>`
+- **Request Body** (optional):
+  ```json
+  {
+    "do_ocr": true,
+    "ocr_provider": "easyocr",
+    "extract_figures": true,
+    "do_table_structure": true
+  }
+  ```
+- **Response**: `200 OK`
+  ```json
+  {
+    "id": "c7113112-9988-7766-5544-33221100aabb",
+    "document_id": "8aa64e81-b518-4b72-97fc-112233445566",
+    "version_id": "18f92113-1122-3344-5566-778899aabbcc",
+    "status": "QUEUED",
+    "stage": "INGESTION",
+    "progress_percent": 0,
+    "created_at": "2026-09-08T00:00:00Z",
+    "updated_at": "2026-09-08T00:00:00Z"
+  }
+  ```
+
+#### `GET /api/v1/documents/{document_id}/processing-status`
+Returns real-time processing stage, progress percentage, error diagnostics, and generated artifact storage keys.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response**: `200 OK`
+  ```json
+  {
+    "document_id": "8aa64e81-b518-4b72-97fc-112233445566",
+    "version_id": "18f92113-1122-3344-5566-778899aabbcc",
+    "job_id": "c7113112-9988-7766-5544-33221100aabb",
+    "status": "COMPLETED",
+    "stage": "INDEXING_READY",
+    "progress_percent": 100,
+    "retry_count": 0,
+    "max_retries": 3,
+    "started_at": "2026-09-08T00:00:01Z",
+    "completed_at": "2026-09-08T00:00:03Z",
+    "duration_ms": 1845.2,
+    "errors": [],
+    "artifacts_created": [
+      "tenants/3fa85f64.../documents/8aa64e81.../v1/8aa64e81_e3b0c442.pdf",
+      "tenants/3fa85f64.../documents/8aa64e81.../v1/artifacts/document.json",
+      "tenants/3fa85f64.../documents/8aa64e81.../v1/artifacts/document.md",
+      "tenants/3fa85f64.../documents/8aa64e81.../v1/figures/picture_001.png"
+    ]
+  }
+  ```
+
 #### `GET /api/v1/documents/{document_id}/assets/{asset_type}`
+
 
 Generates a secure presigned download URL for an asset.
 - **Path Parameters**:
