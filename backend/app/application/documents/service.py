@@ -1,16 +1,16 @@
-"""
-DocuFlow AI — Document Application Service.
-
-Orchestrates document upload, validation, storage persistence,
-relational database transaction, audit logging, and async queue dispatch.
-"""
-
 from __future__ import annotations
 
+import json
 import math
+import os
+import tempfile
+import traceback
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import BinaryIO
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.documents.schemas import (
@@ -22,7 +22,10 @@ from app.application.documents.schemas import (
     DocumentUploadResponse,
     DocumentVersionSummary,
     PaginationMetadata,
+    ProcessDocumentRequest,
+    ProcessingErrorSummary,
     ProcessingJobSummary,
+    ProcessingStatusResponse,
 )
 from app.application.documents.validation import (
     generate_storage_path,
@@ -41,7 +44,11 @@ from app.infrastructure.database.repositories import (
     DocumentVersionRepository,
     ProcessingJobRepository,
 )
+from app.infrastructure.processors import DocumentProcessor, get_document_processor
+from app.infrastructure.processors.base import ProcessedDocument, ProcessingOptions
 from app.infrastructure.storage.base import ObjectStorage
+
+logger = structlog.get_logger(__name__)
 
 
 class DocumentService:
@@ -51,9 +58,11 @@ class DocumentService:
         self,
         session: AsyncSession,
         storage: ObjectStorage,
+        processor: DocumentProcessor | None = None,
     ) -> None:
         self.session = session
         self.storage = storage
+        self.processor = processor or get_document_processor()
         self.document_repo = DocumentRepository(session)
         self.version_repo = DocumentVersionRepository(session)
         self.asset_repo = DocumentAssetRepository(session)
@@ -125,7 +134,6 @@ class DocumentService:
             storage_path=storage_path,
             checksum_sha256=validated.checksum_sha256,
         )
-
 
         version_model = await self.version_repo.create(
             document_id=doc_model.id,
@@ -300,3 +308,280 @@ class DocumentService:
             message="Document deleted successfully.",
             document_id=document_id,
         )
+
+    async def process_document_version(
+        self,
+        document_id: uuid.UUID,
+        version_id: uuid.UUID,
+        options: ProcessingOptions | None = None,
+    ) -> ProcessedDocument:
+        """Execute full Docling parsing pipeline on a document version and store derivative artifacts."""
+        doc = await self.document_repo.get_by_id(document_id)
+        if doc is None:
+            raise DocumentNotFoundException(str(document_id))
+
+        version = await self.version_repo.get_by_id(version_id)
+        if version is None:
+            raise DocumentNotFoundException(f"Version {version_id} for document {document_id}")
+
+        job = await self.job_repo.get_latest_for_document(document_id)
+        if job is None:
+            job = await self.job_repo.create(
+                document_id=document_id,
+                version_id=version_id,
+                status="PROCESSING",
+                stage="PARSING",
+                progress_percent=10,
+            )
+
+        started_at = datetime.now(timezone.utc)
+        await self.job_repo.update_status(
+            job_id=job.id,
+            status="PROCESSING",
+            stage="PARSING",
+            progress_percent=25,
+            started_at=started_at,
+        )
+        await self.session.commit()
+
+        temp_path: Path | None = None
+        try:
+            # 1. Download source document from storage to a temporary file
+            file_bytes = await self.storage.download(version.storage_path)
+            ext = doc.file_type if doc.file_type.startswith(".") else f".{doc.file_type}"
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                tmp.write(file_bytes)
+                temp_path = Path(tmp.name)
+
+            # 2. Invoke DocumentProcessor
+            opts = options or ProcessingOptions(
+                do_ocr=self.settings.ocr_enabled,
+                ocr_provider=self.settings.ocr_provider,
+                ocr_languages=self.settings.ocr_languages,
+            )
+            processed = await self.processor.process(
+                source_path=temp_path,
+                mime_type=doc.file_type,
+                options=opts,
+            )
+
+            # 3. Store structured derivative artifacts in ObjectStorage
+            base_key = f"tenants/{doc.tenant_id}/documents/{doc.id}/v{version.version_number}/artifacts"
+
+            # document.json
+            json_key = f"{base_key}/document.json"
+            json_bytes = json.dumps(processed.json_dict, indent=2).encode("utf-8")
+            await self.storage.upload(json_key, json_bytes, "application/json")
+
+            # document.md
+            md_key = f"{base_key}/document.md"
+            md_bytes = processed.markdown.encode("utf-8")
+            await self.storage.upload(md_key, md_bytes, "text/markdown")
+
+            # document.txt
+            txt_key = f"{base_key}/document.txt"
+            txt_bytes = processed.plain_text.encode("utf-8")
+            await self.storage.upload(txt_key, txt_bytes, "text/plain")
+
+            # metadata.json
+            meta_key = f"{base_key}/metadata.json"
+            meta_bytes = json.dumps(processed.metadata, indent=2).encode("utf-8")
+            await self.storage.upload(meta_key, meta_bytes, "application/json")
+
+            # 4. Idempotently update database records
+            # Clear old derivative assets for this version to prevent duplication
+            await self.asset_repo.delete_derivative_assets(version_id=version.id)
+
+            await self.asset_repo.create(
+                document_id=doc.id,
+                version_id=version.id,
+                asset_type="PARSED_JSON",
+                storage_path=json_key,
+                mime_type="application/json",
+                size_bytes=len(json_bytes),
+                asset_metadata={"schema": "DoclingDocument", "version": "1.0.0"},
+            )
+            await self.asset_repo.create(
+                document_id=doc.id,
+                version_id=version.id,
+                asset_type="EXPORT_MARKDOWN",
+                storage_path=md_key,
+                mime_type="text/markdown",
+                size_bytes=len(md_bytes),
+                asset_metadata={"word_count": processed.metadata.get("word_count", 0)},
+            )
+
+            # Extracted figures
+            for fig_name, fig_bytes in processed.figures.items():
+                fig_key = f"tenants/{doc.tenant_id}/documents/{doc.id}/v{version.version_number}/figures/{fig_name}"
+                await self.storage.upload(fig_key, fig_bytes, "image/png")
+                await self.asset_repo.create(
+                    document_id=doc.id,
+                    version_id=version.id,
+                    asset_type="EXTRACTED_IMAGE",
+                    storage_path=fig_key,
+                    mime_type="image/png",
+                    size_bytes=len(fig_bytes),
+                    asset_metadata={"figure_name": fig_name},
+                )
+
+            completed_at = datetime.now(timezone.utc)
+            await self.job_repo.update_status(
+                job_id=job.id,
+                status="COMPLETED",
+                stage="INDEXING_READY",
+                progress_percent=100,
+                completed_at=completed_at,
+            )
+
+            await self.audit_repo.log_action(
+                tenant_id=doc.tenant_id,
+                user_id=doc.owner_id,
+                action="DOCUMENT_PROCESSED",
+                resource_type="document",
+                resource_id=doc.id,
+                details={
+                    "version_id": str(version.id),
+                    "duration_ms": processed.duration_ms,
+                    "page_count": processed.page_count,
+                    "table_count": processed.table_count,
+                    "figure_count": processed.figure_count,
+                },
+            )
+
+            await self.session.commit()
+            return processed
+
+        except Exception as e:
+            stack = traceback.format_exc()
+            logger.error("document_processing_error", document_id=str(document_id), error=str(e))
+            await self.job_repo.create_error(
+                job_id=job.id,
+                document_id=document_id,
+                stage="PARSING",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                stack_trace=stack,
+                retryable=False,
+            )
+            await self.job_repo.update_status(
+                job_id=job.id,
+                status="FAILED",
+                stage="PARSING",
+                progress_percent=0,
+            )
+            await self.audit_repo.log_action(
+                tenant_id=doc.tenant_id,
+                user_id=doc.owner_id,
+                action="DOCUMENT_PROCESSING_FAILED",
+                resource_type="document",
+                resource_id=doc.id,
+                details={"error": str(e)},
+            )
+            await self.session.commit()
+            raise
+
+        finally:
+            if temp_path and temp_path.exists():
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+
+    async def trigger_processing(
+        self,
+        document_id: uuid.UUID,
+        current_user: User,
+        options: ProcessDocumentRequest | None = None,
+    ) -> ProcessingJobSummary:
+        """Trigger asynchronous document processing via Celery or background task."""
+        owner_id = None if current_user.role == UserRole.ADMIN else current_user.id
+        doc = await self.document_repo.get_by_id_scoped(
+            document_id=document_id,
+            tenant_id=current_user.tenant_id,
+            owner_id=owner_id,
+        )
+        if doc is None:
+            raise DocumentNotFoundException(str(document_id))
+
+        version = await self.version_repo.get_latest_for_document(document_id)
+        if version is None:
+            raise DocumentNotFoundException(f"Version for document {document_id}")
+
+        job = await self.job_repo.get_latest_for_document(document_id)
+        if job is None:
+            job = await self.job_repo.create(
+                document_id=doc.id,
+                version_id=version.id,
+                status="QUEUED",
+                stage="INGESTION",
+                progress_percent=0,
+            )
+        else:
+            await self.job_repo.update_status(
+                job_id=job.id,
+                status="QUEUED",
+                stage="INGESTION",
+                progress_percent=0,
+            )
+            await self.session.commit()
+            await self.session.refresh(job)
+
+        # Dispatch Celery background task
+        try:
+            from app.infrastructure.tasks.parsing_tasks import process_document_task
+
+            task = process_document_task.delay(str(job.id), str(doc.id), str(version.id))
+            job.celery_task_id = task.id
+            await self.session.commit()
+            await self.session.refresh(job)
+        except Exception as queue_err:
+            logger.warning("celery_dispatch_skipped_or_failed", error=str(queue_err))
+
+        return ProcessingJobSummary.model_validate(job)
+
+    async def get_processing_status(
+        self,
+        document_id: uuid.UUID,
+        current_user: User,
+    ) -> ProcessingStatusResponse:
+        """Retrieve real-time processing status, progress, error diagnostics, and artifacts."""
+        owner_id = None if current_user.role == UserRole.ADMIN else current_user.id
+        doc = await self.document_repo.get_by_id_scoped(
+            document_id=document_id,
+            tenant_id=current_user.tenant_id,
+            owner_id=owner_id,
+        )
+        if doc is None:
+            raise DocumentNotFoundException(str(document_id))
+
+        version = await self.version_repo.get_latest_for_document(document_id)
+        version_id = version.id if version else doc.id
+
+        job = await self.job_repo.get_latest_for_document(document_id)
+        if job is None:
+            raise DocumentNotFoundException(f"Processing job for document {document_id}")
+
+        errors = await self.job_repo.get_errors_for_job(job.id)
+        assets = await self.asset_repo.list_by_version(version_id)
+
+        duration_ms = None
+        if job.started_at and job.completed_at:
+            duration_ms = round((job.completed_at - job.started_at).total_seconds() * 1000, 2)
+
+        return ProcessingStatusResponse(
+            document_id=doc.id,
+            version_id=version_id,
+            job_id=job.id,
+            status=job.status,
+            stage=job.stage,
+            progress_percent=job.progress_percent,
+            retry_count=job.retry_count,
+            max_retries=job.max_retries,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            duration_ms=duration_ms,
+            errors=[ProcessingErrorSummary.model_validate(e) for e in errors],
+            artifacts_created=[a.storage_path for a in assets],
+        )
+
