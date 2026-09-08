@@ -29,6 +29,7 @@ from app.infrastructure.database.models import DocumentModel, UserModel
 from app.infrastructure.database.repositories import UserRepository
 from app.infrastructure.database.session import build_engine, build_session_factory
 from app.infrastructure.security.tokens import decode_access_token
+from app.infrastructure.storage import ObjectStorage, get_storage
 
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login",
@@ -46,6 +47,15 @@ def get_settings_dep() -> Settings:
 
 
 SettingsDep = Annotated[Settings, Depends(get_settings_dep)]
+
+
+def get_storage_dep() -> ObjectStorage:
+    """Dependency: return configured ObjectStorage backend."""
+    return get_storage()
+
+
+StorageDep = Annotated[ObjectStorage, Depends(get_storage_dep)]
+
 
 
 async def get_db(settings: SettingsDep) -> AsyncGenerator[AsyncSession, None]:

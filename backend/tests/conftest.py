@@ -17,14 +17,17 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.api.dependencies import get_db
+from app.api.dependencies import get_db, get_storage_dep
 from app.config import Settings, get_settings
 from app.domain.entities import UserRole
 from app.infrastructure.database.models import Base, TenantModel, UserModel
 from app.infrastructure.security.tokens import create_access_token, hash_password
+from app.infrastructure.storage.memory_storage import InMemoryStorage
 from app.main import app
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+_shared_in_memory_storage = InMemoryStorage()
 
 
 @pytest.fixture(scope="session")
@@ -62,8 +65,16 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest.fixture
-async def client(test_engine) -> AsyncGenerator[TestClient, None]:
-    """FastAPI TestClient with database dependency overridden to use in-memory SQLite."""
+async def in_memory_storage() -> InMemoryStorage:
+    _shared_in_memory_storage.clear()
+    return _shared_in_memory_storage
+
+
+
+
+@pytest.fixture
+async def client(test_engine, in_memory_storage: InMemoryStorage) -> AsyncGenerator[TestClient, None]:
+    """FastAPI TestClient with database and storage dependencies overridden."""
     session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -77,10 +88,15 @@ async def client(test_engine) -> AsyncGenerator[TestClient, None]:
             finally:
                 await session.close()
 
+    def override_get_storage() -> InMemoryStorage:
+        return in_memory_storage
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_storage_dep] = override_get_storage
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
 
 
 @pytest.fixture

@@ -62,6 +62,16 @@ class FileTooLargeException(DocuFlowException):
         )
 
 
+class InvalidFileException(DocuFlowException):
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message=message,
+            status_code=400,
+            error_type="https://docuflow.ai/errors/invalid-file",
+        )
+
+
+
 class TenantAccessViolationException(DocuFlowException):
     def __init__(self) -> None:
         super().__init__(

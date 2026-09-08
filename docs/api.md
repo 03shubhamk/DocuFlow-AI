@@ -191,80 +191,149 @@ Retrieves the profile and permissions of the currently authenticated user.
 
 ### 4.2 Documents (`/api/v1/documents`)
 
-#### `POST /api/v1/documents/upload`
-Uploads a new document for processing.
+#### `POST /api/v1/documents`
+Securely uploads a document for processing with zero-trust validation (magic bytes, extension whitelist, streaming SHA-256 calculation, and duplicate detection).
 - **Headers**:
   - `Authorization: Bearer <token>`
-  - `Idempotency-Key: <uuid>` (Optional, recommended)
 - **Request**: `multipart/form-data`
-  - `file`: Binary file stream (max 50MB)
-  - `title`: String (Optional, defaults to original filename)
-  - `enable_ocr`: Boolean (Optional, default `true`)
-  - `extract_tables`: Boolean (Optional, default `true`)
-- **Response**: `202 Accepted`
+  - `file`: Binary file stream (max 50MB). Supported formats: PDF, DOCX, PPTX, XLSX, HTML, MD, TXT, PNG, JPG, JPEG, TIFF.
+  - `title`: String (Optional, defaults to sanitized filename)
+- **Response**: `201 Created`
   ```json
   {
-    "document_id": "8aa64e81-b518-4b72-97fc-112233445566",
-    "version_id": "18f92113-1122-3344-5566-778899aabbcc",
-    "job_id": "c7113112-9988-7766-5544-33221100aabb",
-    "title": "Quarterly_Financials_Q3.pdf",
-    "original_filename": "Quarterly_Financials_Q3.pdf",
-    "file_type": "application/pdf",
-    "file_size_bytes": 4194304,
-    "checksum_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "status": "QUEUED",
-    "created_at": "2026-09-06T12:05:00Z"
+    "document": {
+      "id": "8aa64e81-b518-4b72-97fc-112233445566",
+      "tenant_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "owner_id": "7ca64e81-b518-4b72-97fc-112233445566",
+      "title": "Quarterly_Financials_Q3.pdf",
+      "original_filename": "Quarterly_Financials_Q3.pdf",
+      "file_type": ".pdf",
+      "file_size_bytes": 4194304,
+      "storage_path": "tenants/3fa85f64.../documents/8aa64e81.../v1/8aa64e81_e3b0c442.pdf",
+      "checksum_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "is_deleted": false,
+      "created_at": "2026-09-08T00:00:00Z",
+      "updated_at": "2026-09-08T00:00:00Z"
+    },
+    "job": {
+      "id": "c7113112-9988-7766-5544-33221100aabb",
+      "document_id": "8aa64e81-b518-4b72-97fc-112233445566",
+      "version_id": "18f92113-1122-3344-5566-778899aabbcc",
+      "status": "UPLOADED",
+      "stage": "INGESTION",
+      "progress_percent": 0,
+      "created_at": "2026-09-08T00:00:00Z",
+      "updated_at": "2026-09-08T00:00:00Z"
+    },
+    "message": "Document uploaded successfully and queued for processing."
   }
   ```
 
 #### `GET /api/v1/documents`
-Lists documents for the authenticated tenant with pagination, search, and filtering.
+Lists documents accessible to the authenticated user with pagination, keyword search, filtering, and sorting.
+- **Headers**: `Authorization: Bearer <token>`
 - **Query Parameters**:
-  - `page`: Integer (default 1)
-  - `page_size`: Integer (default 20, max 100)
-  - `status`: Filter by processing status (`COMPLETED`, `PROCESSING`, `FAILED`, etc.)
-  - `file_type`: Filter by MIME type (e.g. `application/pdf`)
-  - `search`: String (searches title and filename)
+  - `page`: Integer (default `1`, min `1`)
+  - `page_size`: Integer (default `20`, min `1`, max `100`)
+  - `file_type`: Filter by extension (e.g. `.pdf`, `.docx`)
+  - `search`: Search query matching title or original filename
   - `sort_by`: `created_at` | `title` | `file_size_bytes` (default: `created_at`)
-  - `sort_order`: `asc` | `desc` (default: `desc`)
+  - `order`: `asc` | `desc` (default: `desc`)
 - **Response**: `200 OK`
   ```json
   {
     "items": [
       {
         "id": "8aa64e81-b518-4b72-97fc-112233445566",
+        "tenant_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "owner_id": "7ca64e81-b518-4b72-97fc-112233445566",
         "title": "Quarterly_Financials_Q3.pdf",
         "original_filename": "Quarterly_Financials_Q3.pdf",
-        "file_type": "application/pdf",
+        "file_type": ".pdf",
         "file_size_bytes": 4194304,
-        "version_number": 1,
-        "latest_job": {
-          "id": "c7113112-9988-7766-5544-33221100aabb",
-          "status": "COMPLETED",
-          "progress_percent": 100
-        },
-        "created_at": "2026-09-06T12:05:00Z",
-        "updated_at": "2026-09-06T12:06:15Z"
+        "storage_path": "tenants/3fa85f64.../documents/8aa64e81.../v1/8aa64e81_e3b0c442.pdf",
+        "checksum_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "is_deleted": false,
+        "created_at": "2026-09-08T00:00:00Z",
+        "updated_at": "2026-09-08T00:00:00Z"
       }
     ],
     "pagination": {
       "page": 1,
       "page_size": 20,
       "total_items": 1,
-      "total_pages": 1
+      "total_pages": 1,
+      "has_next": false,
+      "has_previous": false
     }
   }
   ```
 
 #### `GET /api/v1/documents/{document_id}`
-Retrieves complete details for a document, including version history, available assets, and processing metrics.
-- **Response**: `200 OK` Document detail model.
+Retrieves complete details for a document, including version snapshots, derived assets, and latest processing job status.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response**: `200 OK`
+  ```json
+  {
+    "id": "8aa64e81-b518-4b72-97fc-112233445566",
+    "tenant_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "owner_id": "7ca64e81-b518-4b72-97fc-112233445566",
+    "title": "Quarterly_Financials_Q3.pdf",
+    "original_filename": "Quarterly_Financials_Q3.pdf",
+    "file_type": ".pdf",
+    "file_size_bytes": 4194304,
+    "storage_path": "tenants/3fa85f64.../documents/8aa64e81.../v1/8aa64e81_e3b0c442.pdf",
+    "checksum_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "is_deleted": false,
+    "created_at": "2026-09-08T00:00:00Z",
+    "updated_at": "2026-09-08T00:00:00Z",
+    "versions": [
+      {
+        "id": "18f92113-1122-3344-5566-778899aabbcc",
+        "version_number": 1,
+        "storage_path": "tenants/3fa85f64.../documents/8aa64e81.../v1/8aa64e81_e3b0c442.pdf",
+        "file_size_bytes": 4194304,
+        "checksum_sha256": "e3b0c442...",
+        "created_at": "2026-09-08T00:00:00Z"
+      }
+    ],
+    "assets": [
+      {
+        "id": "29f92113-2233-4455-6677-8899aabbccdd",
+        "version_id": "18f92113-1122-3344-5566-778899aabbcc",
+        "asset_type": "ORIGINAL",
+        "storage_path": "tenants/3fa85f64.../documents/8aa64e81.../v1/8aa64e81_e3b0c442.pdf",
+        "mime_type": "application/pdf",
+        "size_bytes": 4194304,
+        "created_at": "2026-09-08T00:00:00Z"
+      }
+    ],
+    "latest_job": {
+      "id": "c7113112-9988-7766-5544-33221100aabb",
+      "document_id": "8aa64e81-b518-4b72-97fc-112233445566",
+      "version_id": "18f92113-1122-3344-5566-778899aabbcc",
+      "status": "UPLOADED",
+      "stage": "INGESTION",
+      "progress_percent": 0,
+      "created_at": "2026-09-08T00:00:00Z",
+      "updated_at": "2026-09-08T00:00:00Z"
+    }
+  }
+  ```
 
 #### `DELETE /api/v1/documents/{document_id}`
-Soft-deletes a document and queues background cleanup of Qdrant vector points.
-- **Response**: `204 No Content`
+Soft-deletes a document and records the deletion in the immutable audit log. Soft-deleted documents are excluded from queries and listings.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response**: `200 OK`
+  ```json
+  {
+    "message": "Document deleted successfully.",
+    "document_id": "8aa64e81-b518-4b72-97fc-112233445566"
+  }
+  ```
 
 #### `GET /api/v1/documents/{document_id}/assets/{asset_type}`
+
 Generates a secure presigned download URL for an asset.
 - **Path Parameters**:
   - `asset_type`: `ORIGINAL` | `PARSED_JSON` | `EXPORT_MARKDOWN` | `EXTRACTED_IMAGE` | `TABLE_CSV`

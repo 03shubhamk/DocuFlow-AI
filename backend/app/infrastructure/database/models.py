@@ -88,6 +88,22 @@ class UserModel(Base):
         "RefreshTokenModel", back_populates="user", cascade="all, delete-orphan"
     )
 
+    def to_entity(self) -> Any:
+        from app.domain.entities import User, UserRole
+
+        return User(
+            id=self.id,
+            tenant_id=self.tenant_id,
+            email=self.email,
+            hashed_password=self.hashed_password,
+            full_name=self.full_name,
+            role=UserRole(self.role),
+            is_active=self.is_active,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+        )
+
+
 
 class DocumentModel(Base):
     __tablename__ = "documents"
