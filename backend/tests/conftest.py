@@ -30,6 +30,23 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 _shared_in_memory_storage = InMemoryStorage()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def set_testing_env() -> None:
+    import os
+    os.environ["ENVIRONMENT"] = "testing"
+    get_settings.cache_clear()
+    from app.infrastructure.processors import get_document_processor
+    from app.infrastructure.storage import get_storage
+    from app.infrastructure.tasks.celery_app import celery_app
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+
+    get_storage.cache_clear()
+    get_document_processor.cache_clear()
+
+
+
 @pytest.fixture(scope="session")
 def anyio_backend():
     return "asyncio"
@@ -38,6 +55,7 @@ def anyio_backend():
 @pytest.fixture(scope="session")
 def test_settings() -> Settings:
     return get_settings()
+
 
 
 @pytest.fixture
