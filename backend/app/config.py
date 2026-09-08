@@ -140,8 +140,34 @@ class Settings(BaseSettings):
             return json.loads(v)
         return v
 
+    # -------------------------------------------------------------------------
+    # Docling & OCR Configuration
+    # -------------------------------------------------------------------------
+    ocr_enabled: bool = Field(default=True, description="Enable OCR for scanned documents and images")
+    ocr_provider: str = Field(default="easyocr", description="OCR backend: easyocr, tesseract, rapidocr, none")
+    ocr_languages: list[str] = Field(default=["en"], description="List of OCR language codes")
+    docling_artifacts_path: str = Field(default="artifacts", description="Sub-path for generated Docling artifacts")
+    docling_max_workers: int = Field(default=4, description="Max concurrent threads for Docling conversions")
+
+    @field_validator("ocr_provider")
+    @classmethod
+    def validate_ocr_provider(cls, v: str) -> str:
+        allowed = {"easyocr", "tesseract", "rapidocr", "mac", "none", "auto"}
+        val = v.lower()
+        if val not in allowed:
+            raise ValueError(f"ocr_provider must be one of {allowed}")
+        return val
+
+    @field_validator("ocr_languages", mode="before")
+    @classmethod
+    def parse_ocr_languages(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
+
     @property
     def is_production(self) -> bool:
+
         return self.environment == "production"
 
     @property
