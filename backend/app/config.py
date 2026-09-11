@@ -165,6 +165,33 @@ class Settings(BaseSettings):
             return json.loads(v)
         return v
 
+    # -------------------------------------------------------------------------
+    # Intelligent Chunking Configuration
+    # -------------------------------------------------------------------------
+    chunking_strategy: str = Field(
+        default="hierarchical",
+        description="Chunking strategy: hierarchical, hybrid, sliding_window",
+    )
+    chunk_max_tokens: int = Field(default=512, description="Target maximum tokens per chunk")
+    chunk_overlap_tokens: int = Field(
+        default=64, description="Overlap tokens between adjacent chunks when applicable"
+    )
+    chunk_min_tokens: int = Field(
+        default=30, description="Minimum tokens for merging tiny orphaned chunks"
+    )
+    chunk_preserve_tables: bool = Field(
+        default=True, description="Preserve structured tables intact or chunk row-wise"
+    )
+
+    @field_validator("chunking_strategy")
+    @classmethod
+    def validate_chunking_strategy(cls, v: str) -> str:
+        allowed = {"hierarchical", "hybrid", "sliding_window"}
+        val = v.lower()
+        if val not in allowed:
+            raise ValueError(f"chunking_strategy must be one of {allowed}")
+        return val
+
     @property
     def is_production(self) -> bool:
 
