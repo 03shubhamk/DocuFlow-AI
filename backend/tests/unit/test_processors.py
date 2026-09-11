@@ -84,7 +84,11 @@ def test_docling_processor_converter_configuration() -> None:
 
     processor = DoclingDocumentProcessor()
 
-    with patch("docling.document_converter.DocumentConverter", return_value=MagicMock()) as mock_conv_cls:
+    with (
+        patch("docling.document_converter.DocumentConverter", return_value=MagicMock()) as mock_conv_cls,
+        patch("docling.datamodel.pipeline_options.EasyOcrOptions", return_value=MagicMock()),
+        patch("docling.datamodel.pipeline_options.TesseractOcrOptions", return_value=MagicMock()),
+    ):
         # Test EasyOCR provider options
         opts_easyocr = ProcessingOptions(do_ocr=True, ocr_provider="easyocr", ocr_languages=["en", "es"])
         conv_easy = processor._build_converter(opts_easyocr)
@@ -100,4 +104,5 @@ def test_docling_processor_converter_configuration() -> None:
         opts_none = ProcessingOptions(do_ocr=False, ocr_provider="none")
         conv_none = processor._build_converter(opts_none)
         assert conv_none is not None
+
 
