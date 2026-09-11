@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.database.models import (
     AuditLogModel,
     DocumentAssetModel,
+    DocumentChunkModel,
     DocumentModel,
     DocumentVersionModel,
     ProcessingErrorModel,
@@ -539,4 +540,85 @@ class AuditLogRepository:
         self.session.add(audit)
         await self.session.flush()
         return audit
+
+
+class DocumentChunkRepository:
+    """Repository for document chunks with idempotent batch operations and pagination."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def bulk_create(self, chunks: list[DocumentChunkModel]) -> list[DocumentChunkModel]:
+        """Bulk insert document chunks."""
+        if not chunks:
+            return []
+        self.session.add_all(chunks)
+        await self.session.flush()
+        return chunks
+
+    async def delete_by_version(self, version_id: uuid.UUID) -> int:
+        """Idempotently delete all existing chunks for a document version."""
+        from sqlalchemy import delete
+
+        stmt = delete(DocumentChunkModel).where(DocumentChunkModel.version_id == version_id)
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        return getattr(result, "rowcount", 0) or 0
+
+    async def list_by_version(
+        self,
+        version_id: uuid.UUID,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> list[DocumentChunkModel]:
+        """List chunks for a specific document version ordered by chunk_index."""
+        from sqlalchemy import asc
+
+        stmt = (
+            select(DocumentChunkModel)
+            .where(DocumentChunkModel.version_id == version_id)
+            .order_by(asc(DocumentChunkModel.chunk_index))
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_by_document(
+        self,
+        document_id: uuid.UUID,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> list[DocumentChunkModel]:
+        """List all chunks for a document across versions."""
+        from sqlalchemy import asc
+
+        stmt = (
+            select(DocumentChunkModel)
+            .where(DocumentChunkModel.document_id == document_id)
+            .order_by(asc(DocumentChunkModel.chunk_index))
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_by_id(self, chunk_id: uuid.UUID) -> DocumentChunkModel | None:
+        """Fetch a single chunk by UUID."""
+        stmt = select(DocumentChunkModel).where(DocumentChunkModel.id == chunk_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def count_by_version(self, version_id: uuid.UUID) -> int:
+        """Count total chunks for a document version."""
+        from sqlalchemy import func
+
+        stmt = (
+            select(func.count())
+            .select_from(DocumentChunkModel)
+            .where(DocumentChunkModel.version_id == version_id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one() or 0
+
 
