@@ -59,6 +59,7 @@ async def test_process_document_pdf_end_to_end(
     assert await in_memory_storage.exists(f"{base_prefix}/document.md") is True
     assert await in_memory_storage.exists(f"{base_prefix}/document.txt") is True
     assert await in_memory_storage.exists(f"{base_prefix}/metadata.json") is True
+    assert await in_memory_storage.exists(f"{base_prefix}/chunks.json") is True
 
     # 4. Verify DocumentAsset records created in database
     assets = await service.asset_repo.list_by_version(version.id)
@@ -66,14 +67,31 @@ async def test_process_document_pdf_end_to_end(
     assert "ORIGINAL" in asset_types
     assert "PARSED_JSON" in asset_types
     assert "EXPORT_MARKDOWN" in asset_types
+    assert "CHUNKS_JSON" in asset_types
 
-    # 5. Verify ProcessingJob state is COMPLETED
+    # 5. Verify DocumentChunk records created in PostgreSQL
+    chunks = await service.chunk_repo.list_by_version(version.id)
+    assert len(chunks) >= 1
+    assert chunks[0].document_id == doc_id
+    assert chunks[0].version_id == version.id
+    assert chunks[0].token_count > 0
+    assert "checksum" in chunks[0].chunk_metadata
+
+    # 6. Verify ProcessingJob state is COMPLETED
     job = await service.job_repo.get_latest_for_document(doc_id)
     assert job is not None
     assert job.status == "COMPLETED"
     assert job.stage == "INDEXING_READY"
     assert job.progress_percent == 100
     assert job.completed_at is not None
+
+    # 7. Test GET /api/v1/documents/{id}/chunks endpoint
+    chunks_res = client.get(f"/api/v1/documents/{doc_id}/chunks", headers=user_auth_headers)
+    assert chunks_res.status_code == 200
+    chunks_body = chunks_res.json()
+    assert chunks_body["total"] == len(chunks)
+    assert len(chunks_body["items"]) == len(chunks)
+    assert chunks_body["items"][0]["chunk_index"] == 0
 
 
 @pytest.mark.asyncio
@@ -96,16 +114,21 @@ async def test_processing_idempotency(
     # 2. First Processing run
     await service.process_document_version(doc_id, version.id)
     assets_run1 = await service.asset_repo.list_by_version(version.id)
+    chunks_run1 = await service.chunk_repo.list_by_version(version.id)
 
     # 3. Second Processing run (re-processing)
     await service.process_document_version(doc_id, version.id)
     assets_run2 = await service.asset_repo.list_by_version(version.id)
+    chunks_run2 = await service.chunk_repo.list_by_version(version.id)
 
-    # Asset counts should match exactly without duplicate rows
+    # Asset counts and chunk counts should match exactly without duplicate rows
     assert len(assets_run1) == len(assets_run2)
+    assert len(chunks_run1) == len(chunks_run2)
+    assert len(chunks_run2) >= 1
     types_count = [a.asset_type for a in assets_run2]
     assert types_count.count("PARSED_JSON") == 1
     assert types_count.count("EXPORT_MARKDOWN") == 1
+    assert types_count.count("CHUNKS_JSON") == 1
 
 
 @pytest.mark.asyncio
