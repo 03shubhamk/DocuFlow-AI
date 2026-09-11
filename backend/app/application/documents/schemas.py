@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -152,4 +153,32 @@ class ProcessingStatusResponse(BaseModel):
     duration_ms: float | None = None
     errors: list[ProcessingErrorSummary] = Field(default_factory=list)
     artifacts_created: list[str] = Field(default_factory=list)
+
+
+class DocumentChunkResponse(BaseModel):
+    """Structured representation of a document chunk."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    document_id: uuid.UUID
+    version_id: uuid.UUID
+    chunk_index: int
+    content: str
+    token_count: int
+    heading_hierarchy: list[str] = Field(default_factory=list)
+    page_numbers: list[int] = Field(default_factory=list)
+    chunk_metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class DocumentChunkListResponse(BaseModel):
+    """Paginated list of document chunks."""
+
+    items: list[DocumentChunkResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
 
