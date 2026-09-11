@@ -37,13 +37,17 @@ from app.domain.exceptions import (
     DocumentNotFoundException,
     DuplicateDocumentException,
 )
+from app.infrastructure.chunking import ChunkingOptions, get_chunker
+from app.infrastructure.database.models import DocumentChunkModel
 from app.infrastructure.database.repositories import (
     AuditLogRepository,
     DocumentAssetRepository,
+    DocumentChunkRepository,
     DocumentRepository,
     DocumentVersionRepository,
     ProcessingJobRepository,
 )
+from app.infrastructure.normalization import DocumentNormalizer, MetadataExtractor
 from app.infrastructure.processors import DocumentProcessor, get_document_processor
 from app.infrastructure.processors.base import ProcessedDocument, ProcessingOptions
 from app.infrastructure.storage.base import ObjectStorage
@@ -66,6 +70,7 @@ class DocumentService:
         self.document_repo = DocumentRepository(session)
         self.version_repo = DocumentVersionRepository(session)
         self.asset_repo = DocumentAssetRepository(session)
+        self.chunk_repo = DocumentChunkRepository(session)
         self.job_repo = ProcessingJobRepository(session)
         self.audit_repo = AuditLogRepository(session)
         self.settings = get_settings()
@@ -353,7 +358,7 @@ class DocumentService:
                 tmp.write(file_bytes)
                 temp_path = Path(tmp.name)
 
-            # 2. Invoke DocumentProcessor
+            # 2. Invoke DocumentProcessor (Parsing stage)
             opts = options or ProcessingOptions(
                 do_ocr=self.settings.ocr_enabled,
                 ocr_provider=self.settings.ocr_provider,
@@ -365,31 +370,111 @@ class DocumentService:
                 options=opts,
             )
 
-            # 3. Store structured derivative artifacts in ObjectStorage
+            # 3. Normalization & Metadata Extraction stage
+            await self.job_repo.update_status(
+                job_id=job.id,
+                status="PROCESSING",
+                stage="NORMALIZATION",
+                progress_percent=50,
+            )
+
+            normalized_md = DocumentNormalizer.normalize_markdown(processed.markdown)
+            cleaned_text = DocumentNormalizer.clean_text(processed.plain_text)
+            normalized_ast = DocumentNormalizer.normalize_ast(processed.json_dict)
+
+            extracted_metadata = MetadataExtractor.extract(
+                markdown=normalized_md,
+                plain_text=cleaned_text,
+                filename=doc.original_filename,
+                file_type=doc.file_type,
+                checksum=version.checksum_sha256,
+                page_count=processed.page_count,
+                table_count=processed.table_count,
+                figure_count=len(processed.figures) or processed.figure_count,
+                ast_dict=normalized_ast,
+            )
+
+            # 4. Intelligent Chunking stage
+            await self.job_repo.update_status(
+                job_id=job.id,
+                status="PROCESSING",
+                stage="CHUNKING",
+                progress_percent=75,
+            )
+
+            chunking_opts = ChunkingOptions(
+                max_tokens=self.settings.chunk_max_tokens,
+                overlap_tokens=self.settings.chunk_overlap_tokens,
+                min_tokens=self.settings.chunk_min_tokens,
+                preserve_tables=self.settings.chunk_preserve_tables,
+                source_filename=doc.original_filename,
+            )
+            chunker = get_chunker(strategy=self.settings.chunking_strategy)
+            chunks = chunker.chunk(
+                markdown=normalized_md,
+                document_id=doc.id,
+                version_id=version.id,
+                options=chunking_opts,
+                ast_dict=normalized_ast,
+            )
+
+            # 5. Idempotently store chunks in PostgreSQL
+            await self.chunk_repo.delete_by_version(version_id=version.id)
+            chunk_models = [
+                DocumentChunkModel(
+                    id=c.chunk_id,
+                    document_id=c.document_id,
+                    version_id=c.version_id,
+                    chunk_index=c.chunk_index,
+                    content=c.text,
+                    token_count=c.token_count,
+                    heading_hierarchy=c.heading_hierarchy,
+                    page_numbers=c.page_numbers,
+                    chunk_metadata=c.chunk_metadata,
+                )
+                for c in chunks
+            ]
+            await self.chunk_repo.bulk_create(chunk_models)
+
+            # 6. Store structured derivative artifacts in ObjectStorage
             base_key = f"tenants/{doc.tenant_id}/documents/{doc.id}/v{version.version_number}/artifacts"
 
-            # document.json
+            # document.json (normalized AST)
             json_key = f"{base_key}/document.json"
-            json_bytes = json.dumps(processed.json_dict, indent=2).encode("utf-8")
+            json_bytes = json.dumps(normalized_ast, indent=2).encode("utf-8")
             await self.storage.upload(json_key, json_bytes, "application/json")
 
-            # document.md
+            # document.md (normalized Markdown)
             md_key = f"{base_key}/document.md"
-            md_bytes = processed.markdown.encode("utf-8")
+            md_bytes = normalized_md.encode("utf-8")
             await self.storage.upload(md_key, md_bytes, "text/markdown")
 
-            # document.txt
+            # document.txt (cleaned plain text)
             txt_key = f"{base_key}/document.txt"
-            txt_bytes = processed.plain_text.encode("utf-8")
+            txt_bytes = cleaned_text.encode("utf-8")
             await self.storage.upload(txt_key, txt_bytes, "text/plain")
 
-            # metadata.json
+            # chunks.json (structured chunks export)
+            chunks_key = f"{base_key}/chunks.json"
+            chunks_payload = [c.to_dict() for c in chunks]
+            chunks_bytes = json.dumps(chunks_payload, indent=2).encode("utf-8")
+            await self.storage.upload(chunks_key, chunks_bytes, "application/json")
+
+            # metadata.json (enriched business and structural metadata)
+            meta_dict = extracted_metadata.to_dict()
+            meta_dict["chunk_count"] = len(chunks)
+            meta_dict["total_tokens"] = sum(c.token_count for c in chunks)
+            meta_dict["avg_chunk_tokens"] = (
+                round(sum(c.token_count for c in chunks) / max(1, len(chunks)), 1)
+            )
+            meta_dict["chunking_strategy"] = self.settings.chunking_strategy
+            meta_dict["duration_ms"] = processed.duration_ms
+
             meta_key = f"{base_key}/metadata.json"
-            meta_bytes = json.dumps(processed.metadata, indent=2).encode("utf-8")
+            meta_bytes = json.dumps(meta_dict, indent=2).encode("utf-8")
             await self.storage.upload(meta_key, meta_bytes, "application/json")
 
-            # 4. Idempotently update database records
-            # Clear old derivative assets for this version to prevent duplication
+            # 7. Idempotently update database asset records
             await self.asset_repo.delete_derivative_assets(version_id=version.id)
 
             await self.asset_repo.create(
@@ -408,7 +493,16 @@ class DocumentService:
                 storage_path=md_key,
                 mime_type="text/markdown",
                 size_bytes=len(md_bytes),
-                asset_metadata={"word_count": processed.metadata.get("word_count", 0)},
+                asset_metadata={"word_count": extracted_metadata.word_count},
+            )
+            await self.asset_repo.create(
+                document_id=doc.id,
+                version_id=version.id,
+                asset_type="CHUNKS_JSON",
+                storage_path=chunks_key,
+                mime_type="application/json",
+                size_bytes=len(chunks_bytes),
+                asset_metadata={"chunk_count": len(chunks)},
             )
 
             # Extracted figures
@@ -443,9 +537,10 @@ class DocumentService:
                 details={
                     "version_id": str(version.id),
                     "duration_ms": processed.duration_ms,
-                    "page_count": processed.page_count,
-                    "table_count": processed.table_count,
-                    "figure_count": processed.figure_count,
+                    "page_count": extracted_metadata.page_count,
+                    "chunk_count": len(chunks),
+                    "table_count": extracted_metadata.table_count,
+                    "figure_count": extracted_metadata.figure_count,
                 },
             )
 
@@ -584,4 +679,38 @@ class DocumentService:
             errors=[ProcessingErrorSummary.model_validate(e) for e in errors],
             artifacts_created=[a.storage_path for a in assets],
         )
+
+    async def list_document_chunks(
+        self,
+        document_id: uuid.UUID,
+        current_user: User,
+        version_id: uuid.UUID | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[DocumentChunkModel], int]:
+        """Fetch paginated document chunks with tenant and user isolation."""
+        owner_id = None if current_user.role == UserRole.ADMIN else current_user.id
+        doc = await self.document_repo.get_by_id_scoped(
+            document_id=document_id,
+            tenant_id=current_user.tenant_id,
+            owner_id=owner_id,
+        )
+        if doc is None:
+            raise DocumentNotFoundException(str(document_id))
+
+        target_version_id = version_id
+        if target_version_id is None:
+            latest_version = await self.version_repo.get_latest_for_document(document_id)
+            if latest_version is None:
+                return [], 0
+            target_version_id = latest_version.id
+
+        chunks = await self.chunk_repo.list_by_version(
+            version_id=target_version_id,
+            offset=offset,
+            limit=limit,
+        )
+        total = await self.chunk_repo.count_by_version(version_id=target_version_id)
+        return chunks, total
+
 
