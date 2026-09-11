@@ -25,6 +25,8 @@ from fastapi import (
 
 from app.api.dependencies import CurrentUser, DbSession, StorageDep
 from app.application.documents.schemas import (
+    DocumentChunkListResponse,
+    DocumentChunkResponse,
     DocumentDetailResponse,
     DocumentListResponse,
     DocumentMessageResponse,
@@ -188,5 +190,43 @@ async def get_processing_status(
         document_id=document_id,
         current_user=current_user.to_entity(),
     )
+
+
+@router.get(
+    "/{document_id}/chunks",
+    response_model=DocumentChunkListResponse,
+    summary="Get document chunks",
+    description="Retrieve paginated structured chunks for a document version with heading hierarchy and metadata.",
+)
+async def get_document_chunks(
+    document_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    storage: StorageDep,
+    version_id: Annotated[
+        uuid.UUID | None,
+        Query(description="Filter chunks by version UUID (defaults to latest)"),
+    ] = None,
+    page: Annotated[int, Query(ge=1, description="Page number")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200, description="Items per page")] = 50,
+) -> DocumentChunkListResponse:
+    service = DocumentService(session=db, storage=storage)
+    offset = (page - 1) * page_size
+    items, total = await service.list_document_chunks(
+        document_id=document_id,
+        current_user=current_user.to_entity(),
+        version_id=version_id,
+        offset=offset,
+        limit=page_size,
+    )
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+    return DocumentChunkListResponse(
+        items=[DocumentChunkResponse.model_validate(chunk) for chunk in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
+
 
 
