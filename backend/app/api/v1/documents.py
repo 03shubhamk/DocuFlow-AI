@@ -34,6 +34,7 @@ from app.application.documents.schemas import (
     ProcessDocumentRequest,
     ProcessingJobSummary,
     ProcessingStatusResponse,
+    ReindexResponse,
 )
 from app.application.documents.service import DocumentService
 
@@ -227,6 +228,26 @@ async def get_document_chunks(
         page_size=page_size,
         total_pages=total_pages,
     )
+
+
+@router.post(
+    "/{document_id}/reindex",
+    response_model=ReindexResponse,
+    summary="Re-index document vector embeddings",
+    description="Regenerate chunk vector embeddings and idempotently upsert them into Qdrant vector collection.",
+)
+async def reindex_document(
+    document_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    storage: StorageDep,
+) -> ReindexResponse:
+    service = DocumentService(session=db, storage=storage)
+    return await service.reindex_document(
+        document_id=document_id,
+        current_user=current_user.to_entity(),
+    )
+
 
 
 
