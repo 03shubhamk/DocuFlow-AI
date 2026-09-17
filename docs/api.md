@@ -418,10 +418,25 @@ Returns paginated chunks extracted from the document with heading breadcrumbs an
         "chunk_metadata": {
           "item_type": "section_header",
           "bounding_box": {"l": 54.0, "t": 72.0, "r": 540.0, "b": 110.0}
-        }
       }
     ],
-    "total_chunks": 48
+    "total": 48
+  }
+  ```
+
+#### `POST /api/v1/documents/{document_id}/reindex`
+Regenerates dense vector representations for all chunks of the latest document version and idempotently upserts them into the Qdrant vector database.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response**: `200 OK`
+  ```json
+  {
+    "document_id": "8aa64e81-b518-4b72-97fc-112233445566",
+    "version_id": "18f92113-1122-3344-5566-778899aabbcc",
+    "status": "INDEXED",
+    "chunks_indexed": 48,
+    "model_name": "BAAI/bge-small-en-v1.5",
+    "dimension": 384,
+    "message": "Document re-indexed successfully."
   }
   ```
 
