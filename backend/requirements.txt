@@ -19,4 +19,5 @@ passlib[bcrypt]>=1.7.4
 slowapi>=0.1.9
 docling>=2.0.0
 tiktoken>=0.7.0
+fastembed>=0.3.0
 
