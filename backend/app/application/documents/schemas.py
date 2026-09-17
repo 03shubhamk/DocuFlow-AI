@@ -182,3 +182,16 @@ class DocumentChunkListResponse(BaseModel):
     total_pages: int
 
 
+class ReindexResponse(BaseModel):
+    """Response returned when a document re-indexing is triggered or completed."""
+
+    document_id: uuid.UUID
+    version_id: uuid.UUID
+    status: str
+    chunks_indexed: int
+    model_name: str
+    dimension: int
+    message: str
+
+
+
