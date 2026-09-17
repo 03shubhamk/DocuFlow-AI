@@ -93,8 +93,38 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     qdrant_host: str = Field(default="localhost")
     qdrant_port: int = Field(default=6333)
+    qdrant_url: str | None = Field(default=None, description="Optional full Qdrant URL (e.g. https://xyz.qdrant.io)")
     qdrant_api_key: str | None = Field(default=None)
     qdrant_collection_name: str = Field(default="docuflow_chunks")
+    qdrant_distance: str = Field(default="Cosine", description="Similarity metric: Cosine, Dot, Euclidean")
+
+    # -------------------------------------------------------------------------
+    # Embedding Models & Vector Generation
+    # -------------------------------------------------------------------------
+    embedding_provider: str = Field(
+        default="fastembed",
+        description="Embedding backend: fastembed, sentence-transformers, openai, mock",
+    )
+    embedding_model: str = Field(
+        default="BAAI/bge-small-en-v1.5",
+        description="Model name/identifier for embeddings",
+    )
+    embedding_dimension: int = Field(
+        default=384,
+        description="Vector dimensionality (e.g., 384 for bge-small, 768 for bge-base, 1536 for OpenAI)",
+    )
+    embedding_batch_size: int = Field(default=32, description="Batch size for generating chunk embeddings")
+    embedding_api_key: str | None = Field(default=None, description="API key for external embedding providers")
+
+    @field_validator("embedding_provider")
+    @classmethod
+    def validate_embedding_provider(cls, v: str) -> str:
+        allowed = {"fastembed", "sentence-transformers", "openai", "mock", "auto"}
+        val = v.lower().strip()
+        if val not in allowed:
+            raise ValueError(f"embedding_provider must be one of {allowed}")
+        return val
+
 
     # -------------------------------------------------------------------------
     # Security — JWT
