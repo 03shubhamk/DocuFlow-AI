@@ -26,11 +26,13 @@ from app.application.documents.schemas import (
     ProcessingErrorSummary,
     ProcessingJobSummary,
     ProcessingStatusResponse,
+    ReindexResponse,
 )
 from app.application.documents.validation import (
     generate_storage_path,
     process_and_validate_upload_stream,
 )
+from app.application.embeddings.service import EmbeddingService
 from app.config import get_settings
 from app.domain.entities import User, UserRole
 from app.domain.exceptions import (
@@ -38,19 +40,22 @@ from app.domain.exceptions import (
     DuplicateDocumentException,
 )
 from app.infrastructure.chunking import ChunkingOptions, get_chunker
-from app.infrastructure.database.models import DocumentChunkModel
+from app.infrastructure.database.models import DocumentChunkModel, EmbeddingRecordModel
 from app.infrastructure.database.repositories import (
     AuditLogRepository,
     DocumentAssetRepository,
     DocumentChunkRepository,
     DocumentRepository,
     DocumentVersionRepository,
+    EmbeddingRecordRepository,
     ProcessingJobRepository,
 )
 from app.infrastructure.normalization import DocumentNormalizer, MetadataExtractor
 from app.infrastructure.processors import DocumentProcessor, get_document_processor
 from app.infrastructure.processors.base import ProcessedDocument, ProcessingOptions
 from app.infrastructure.storage.base import ObjectStorage
+from app.infrastructure.vectorstore import get_vector_store
+from app.infrastructure.vectorstore.base import VectorPoint, VectorStore
 
 logger = structlog.get_logger(__name__)
 
@@ -63,14 +68,19 @@ class DocumentService:
         session: AsyncSession,
         storage: ObjectStorage,
         processor: DocumentProcessor | None = None,
+        embedding_service: EmbeddingService | None = None,
+        vector_store: VectorStore | None = None,
     ) -> None:
         self.session = session
         self.storage = storage
         self.processor = processor or get_document_processor()
+        self.embedding_service = embedding_service or EmbeddingService()
+        self.vector_store = vector_store or get_vector_store()
         self.document_repo = DocumentRepository(session)
         self.version_repo = DocumentVersionRepository(session)
         self.asset_repo = DocumentAssetRepository(session)
         self.chunk_repo = DocumentChunkRepository(session)
+        self.embedding_repo = EmbeddingRecordRepository(session)
         self.job_repo = ProcessingJobRepository(session)
         self.audit_repo = AuditLogRepository(session)
         self.settings = get_settings()
@@ -296,6 +306,13 @@ class DocumentService:
 
         await self.document_repo.soft_delete(document_id=document_id)
 
+        # Remove vector points from Qdrant and embedding records from PostgreSQL
+        try:
+            await self.vector_store.delete_by_document_id(document_id)
+            await self.embedding_repo.delete_by_document(document_id)
+        except Exception as vec_err:
+            logger.warning("vector_store_cleanup_error", document_id=str(document_id), error=str(vec_err))
+
         await self.audit_repo.log_action(
             tenant_id=current_user.tenant_id,
             user_id=current_user.id,
@@ -519,6 +536,82 @@ class DocumentService:
                     asset_metadata={"figure_name": fig_name},
                 )
 
+            # 8. Embedding Generation & Qdrant Vector Indexing
+            embedded_count = 0
+            if chunk_models:
+                await self.job_repo.update_status(
+                    job_id=job.id,
+                    status="PROCESSING",
+                    stage="EMBEDDING",
+                    progress_percent=75,
+                )
+                await self.session.commit()
+
+                # Generate embeddings in batches via EmbeddingService
+                texts = [c.content for c in chunk_models]
+                embeddings = await self.embedding_service.generate_embeddings(texts)
+
+                await self.job_repo.update_status(
+                    job_id=job.id,
+                    status="PROCESSING",
+                    stage="INDEXING",
+                    progress_percent=90,
+                )
+                await self.session.commit()
+
+                # Build VectorPoints with deterministic IDs
+                points: list[VectorPoint] = []
+                for c_model, embedding in zip(chunk_models, embeddings, strict=False):
+                    point_id = uuid.uuid5(
+                        uuid.NAMESPACE_DNS,
+                        f"{version.id}:{c_model.id}:{self.embedding_service.model_name}",
+                    )
+                    page_num = c_model.page_numbers[0] if c_model.page_numbers else None
+                    section_path = c_model.chunk_metadata.get("section_path") if c_model.chunk_metadata else None
+                    if not section_path and c_model.heading_hierarchy:
+                        section_path = " > ".join(str(h) for h in c_model.heading_hierarchy)
+
+                    payload = {
+                        "document_id": str(doc.id),
+                        "version_id": str(version.id),
+                        "chunk_id": str(c_model.id),
+                        "tenant_id": str(doc.tenant_id),
+                        "user_id": str(doc.owner_id),
+                        "page_number": page_num,
+                        "page_numbers": c_model.page_numbers or [],
+                        "section_path": section_path or "",
+                        "heading_hierarchy": c_model.heading_hierarchy or [],
+                        "chunk_index": c_model.chunk_index,
+                        "filename": doc.original_filename,
+                        "mime_type": doc.file_type,
+                        "text": c_model.content,
+                        "token_count": c_model.token_count,
+                        "checksum": c_model.chunk_metadata.get("checksum", "") if c_model.chunk_metadata else "",
+                    }
+                    points.append(VectorPoint(id=point_id, vector=embedding, payload=payload))
+
+                # Delete prior points for this version to ensure idempotency
+                await self.vector_store.delete_by_version_id(version.id)
+                # Upsert new vector points into vector store
+                await self.vector_store.upsert_vectors(points)
+
+                # Store embedding audit records in PostgreSQL
+                chunk_ids = [c.id for c in chunk_models]
+                await self.embedding_repo.delete_by_chunk_ids(chunk_ids)
+                embedding_records = [
+                    EmbeddingRecordModel(
+                        id=uuid.uuid4(),
+                        document_id=doc.id,
+                        chunk_id=c_model.id,
+                        model_name=self.embedding_service.model_name,
+                        vector_dimension=self.embedding_service.dimension,
+                        qdrant_point_id=pt.id,
+                    )
+                    for c_model, pt in zip(chunk_models, points, strict=False)
+                ]
+                await self.embedding_repo.bulk_create(embedding_records)
+                embedded_count = len(points)
+
             completed_at = datetime.now(timezone.utc)
             await self.job_repo.update_status(
                 job_id=job.id,
@@ -539,6 +632,7 @@ class DocumentService:
                     "duration_ms": processed.duration_ms,
                     "page_count": extracted_metadata.page_count,
                     "chunk_count": len(chunks),
+                    "embedded_chunks_count": embedded_count,
                     "table_count": extracted_metadata.table_count,
                     "figure_count": extracted_metadata.figure_count,
                 },
@@ -712,5 +806,108 @@ class DocumentService:
         )
         total = await self.chunk_repo.count_by_version(version_id=target_version_id)
         return chunks, total
+
+    async def reindex_document(
+        self,
+        document_id: uuid.UUID,
+        current_user: User,
+    ) -> ReindexResponse:
+        """Regenerate embeddings and re-index all chunks for the latest version of a document."""
+        owner_id = None if current_user.role == UserRole.ADMIN else current_user.id
+        doc = await self.document_repo.get_by_id_scoped(
+            document_id=document_id,
+            tenant_id=current_user.tenant_id,
+            owner_id=owner_id,
+            include_deleted=False,
+        )
+        if doc is None:
+            raise DocumentNotFoundException(str(document_id))
+
+        version = await self.version_repo.get_latest_for_document(document_id)
+        if version is None:
+            raise DocumentNotFoundException(f"Latest version for document {document_id}")
+
+        chunks = await self.chunk_repo.list_by_version(version_id=version.id, offset=0, limit=10000)
+        if not chunks:
+            # If no chunks exist, trigger parsing pipeline
+            await self.process_document_version(document_id=doc.id, version_id=version.id)
+            chunks = await self.chunk_repo.list_by_version(version_id=version.id, offset=0, limit=10000)
+
+        texts = [c.content for c in chunks]
+        embeddings = await self.embedding_service.generate_embeddings(texts)
+
+        points: list[VectorPoint] = []
+        for c_model, embedding in zip(chunks, embeddings, strict=False):
+            point_id = uuid.uuid5(
+                uuid.NAMESPACE_DNS,
+                f"{version.id}:{c_model.id}:{self.embedding_service.model_name}",
+            )
+            page_num = c_model.page_numbers[0] if c_model.page_numbers else None
+            section_path = c_model.chunk_metadata.get("section_path") if c_model.chunk_metadata else None
+            if not section_path and c_model.heading_hierarchy:
+                section_path = " > ".join(str(h) for h in c_model.heading_hierarchy)
+
+            payload = {
+                "document_id": str(doc.id),
+                "version_id": str(version.id),
+                "chunk_id": str(c_model.id),
+                "tenant_id": str(doc.tenant_id),
+                "user_id": str(doc.owner_id),
+                "page_number": page_num,
+                "page_numbers": c_model.page_numbers or [],
+                "section_path": section_path or "",
+                "heading_hierarchy": c_model.heading_hierarchy or [],
+                "chunk_index": c_model.chunk_index,
+                "filename": doc.original_filename,
+                "mime_type": doc.file_type,
+                "text": c_model.content,
+                "token_count": c_model.token_count,
+                "checksum": c_model.chunk_metadata.get("checksum", "") if c_model.chunk_metadata else "",
+            }
+            points.append(VectorPoint(id=point_id, vector=embedding, payload=payload))
+
+        await self.vector_store.delete_by_version_id(version.id)
+        if points:
+            await self.vector_store.upsert_vectors(points)
+
+        chunk_ids = [c.id for c in chunks]
+        await self.embedding_repo.delete_by_chunk_ids(chunk_ids)
+        embedding_records = [
+            EmbeddingRecordModel(
+                id=uuid.uuid4(),
+                document_id=doc.id,
+                chunk_id=c_model.id,
+                model_name=self.embedding_service.model_name,
+                vector_dimension=self.embedding_service.dimension,
+                qdrant_point_id=pt.id,
+            )
+            for c_model, pt in zip(chunks, points, strict=False)
+        ]
+        await self.embedding_repo.bulk_create(embedding_records)
+
+        await self.audit_repo.log_action(
+            tenant_id=doc.tenant_id,
+            user_id=current_user.id,
+            action="DOCUMENT_REINDEXED",
+            resource_type="document",
+            resource_id=doc.id,
+            details={
+                "version_id": str(version.id),
+                "chunks_indexed": len(points),
+                "model_name": self.embedding_service.model_name,
+            },
+        )
+        await self.session.commit()
+
+        return ReindexResponse(
+            document_id=doc.id,
+            version_id=version.id,
+            status="INDEXED",
+            chunks_indexed=len(points),
+            model_name=self.embedding_service.model_name,
+            dimension=self.embedding_service.dimension,
+            message="Document re-indexed successfully.",
+        )
+
 
 
