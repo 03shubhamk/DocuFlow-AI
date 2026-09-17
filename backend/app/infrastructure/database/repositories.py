@@ -20,6 +20,7 @@ from app.infrastructure.database.models import (
     DocumentChunkModel,
     DocumentModel,
     DocumentVersionModel,
+    EmbeddingRecordModel,
     ProcessingErrorModel,
     ProcessingJobModel,
     RefreshTokenModel,
@@ -620,5 +621,57 @@ class DocumentChunkRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one() or 0
+
+
+class EmbeddingRecordRepository:
+    """Repository for managing vector embedding audit records in PostgreSQL."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def bulk_create(
+        self, records: list[EmbeddingRecordModel]
+    ) -> list[EmbeddingRecordModel]:
+        """Bulk insert embedding records."""
+        if not records:
+            return []
+        self.session.add_all(records)
+        await self.session.flush()
+        return records
+
+    async def delete_by_document(self, document_id: uuid.UUID) -> int:
+        """Delete all embedding records for a document."""
+        from sqlalchemy import delete
+
+        stmt = delete(EmbeddingRecordModel).where(
+            EmbeddingRecordModel.document_id == document_id
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        return getattr(result, "rowcount", 0) or 0
+
+    async def delete_by_chunk_ids(self, chunk_ids: list[uuid.UUID]) -> int:
+        """Delete embedding records matching chunk IDs."""
+        if not chunk_ids:
+            return 0
+        from sqlalchemy import delete
+
+        stmt = delete(EmbeddingRecordModel).where(
+            EmbeddingRecordModel.chunk_id.in_(chunk_ids)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        return getattr(result, "rowcount", 0) or 0
+
+    async def list_by_document(
+        self, document_id: uuid.UUID
+    ) -> list[EmbeddingRecordModel]:
+        """List all embedding records for a document."""
+        stmt = select(EmbeddingRecordModel).where(
+            EmbeddingRecordModel.document_id == document_id
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
 
 
