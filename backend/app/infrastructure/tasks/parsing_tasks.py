@@ -90,3 +90,84 @@ def process_document_task(
             raise self.retry(exc=exc, countdown=2 ** self.request.retries * 5) from exc
         raise exc
 
+
+@celery_app.task(
+    name="docuflow.indexing.generate_embeddings_and_index",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=10,
+    acks_late=True,
+)
+def generate_embeddings_and_index_task(
+    self,
+    job_id: str,
+    document_id: str,
+    version_id: str,
+) -> dict[str, str]:
+    """Celery background worker generating embeddings and indexing chunks into Qdrant."""
+    logger.info("indexing_task_started", job_id=job_id, document_id=document_id, version_id=version_id)
+
+    async def _run_async_indexing() -> dict[str, str]:
+        from app.application.documents.service import DocumentService
+        from app.domain.entities import User, UserRole
+
+        settings = get_settings()
+        engine = build_engine(settings)
+        session_factory = build_session_factory(engine)
+        storage = get_storage()
+        processor = get_document_processor()
+
+        async with session_factory() as session:
+            service = DocumentService(session=session, storage=storage, processor=processor)
+            try:
+                doc = await service.document_repo.get_by_id(uuid.UUID(document_id))
+                if not doc:
+                    return {"status": "FAILED", "reason": "Document not found"}
+                synthetic_user = User(
+                    id=doc.owner_id,
+                    tenant_id=doc.tenant_id,
+                    email="system@internal",
+                    role=UserRole.ADMIN,
+                )
+                res = await service.reindex_document(
+                    document_id=uuid.UUID(document_id),
+                    current_user=synthetic_user,
+                )
+                return {
+                    "status": "COMPLETED",
+                    "job_id": job_id,
+                    "document_id": document_id,
+                    "version_id": version_id,
+                    "chunks_indexed": str(res.chunks_indexed),
+                }
+            finally:
+                await engine.dispose()
+
+    try:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(lambda: asyncio.run(_run_async_indexing()))
+                return future.result()
+        else:
+            return asyncio.run(_run_async_indexing())
+
+    except Exception as exc:
+        logger.error(
+            "indexing_task_failed",
+            job_id=job_id,
+            document_id=document_id,
+            error=str(exc),
+            retry_count=self.request.retries,
+        )
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=2 ** self.request.retries * 5) from exc
+        raise exc
+
+
