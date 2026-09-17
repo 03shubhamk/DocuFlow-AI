@@ -77,7 +77,13 @@ async def test_process_document_pdf_end_to_end(
     assert chunks[0].token_count > 0
     assert "checksum" in chunks[0].chunk_metadata
 
-    # 6. Verify ProcessingJob state is COMPLETED
+    # 6. Verify EmbeddingRecord records created in PostgreSQL
+    embedding_records = await service.embedding_repo.list_by_document(doc_id)
+    assert len(embedding_records) == len(chunks)
+    assert embedding_records[0].vector_dimension == 384
+    assert embedding_records[0].qdrant_point_id is not None
+
+    # 7. Verify ProcessingJob state is COMPLETED
     job = await service.job_repo.get_latest_for_document(doc_id)
     assert job is not None
     assert job.status == "COMPLETED"
@@ -85,7 +91,7 @@ async def test_process_document_pdf_end_to_end(
     assert job.progress_percent == 100
     assert job.completed_at is not None
 
-    # 7. Test GET /api/v1/documents/{id}/chunks endpoint
+    # 8. Test GET /api/v1/documents/{id}/chunks endpoint
     chunks_res = client.get(f"/api/v1/documents/{doc_id}/chunks", headers=user_auth_headers)
     assert chunks_res.status_code == 200
     chunks_body = chunks_res.json()
@@ -211,3 +217,63 @@ async def test_processing_failure_records_error(
     assert len(errors) >= 1
     assert "Corrupt PDF file header" in errors[0].error_message
     assert errors[0].error_type == "ValueError"
+
+
+@pytest.mark.asyncio
+async def test_reindex_document_endpoint(
+    client: TestClient,
+    user_auth_headers: dict[str, str],
+    in_memory_storage: InMemoryStorage,
+    db_session: AsyncSession,
+) -> None:
+    # 1. Upload & Process
+    pdf_content = b"%PDF-1.4\nReindex test document text content"
+    files = {"file": ("reindex_doc.pdf", io.BytesIO(pdf_content), "application/pdf")}
+    upload_res = client.post("/api/v1/documents", headers=user_auth_headers, files=files)
+    doc_id = upload_res.json()["document"]["id"]
+
+    service = DocumentService(session=db_session, storage=in_memory_storage)
+    version = await service.version_repo.get_latest_for_document(uuid.UUID(doc_id))
+    assert version is not None
+    await service.process_document_version(uuid.UUID(doc_id), version.id)
+
+    # 2. Call Reindex API endpoint
+    reindex_res = client.post(f"/api/v1/documents/{doc_id}/reindex", headers=user_auth_headers)
+    assert reindex_res.status_code == 200
+    body = reindex_res.json()
+    assert body["status"] == "INDEXED"
+    assert body["chunks_indexed"] >= 1
+    assert body["dimension"] == 384
+    assert body["model_name"] == "BAAI/bge-small-en-v1.5"
+
+
+@pytest.mark.asyncio
+async def test_delete_document_cleans_vector_store(
+    client: TestClient,
+    user_auth_headers: dict[str, str],
+    in_memory_storage: InMemoryStorage,
+    db_session: AsyncSession,
+) -> None:
+    # 1. Upload & Process
+    pdf_content = b"%PDF-1.4\nVector store deletion test document"
+    files = {"file": ("del_vector_doc.pdf", io.BytesIO(pdf_content), "application/pdf")}
+    upload_res = client.post("/api/v1/documents", headers=user_auth_headers, files=files)
+    doc_id = uuid.UUID(upload_res.json()["document"]["id"])
+
+    service = DocumentService(session=db_session, storage=in_memory_storage)
+    version = await service.version_repo.get_latest_for_document(doc_id)
+    assert version is not None
+    await service.process_document_version(doc_id, version.id)
+
+    # Verify embeddings exist
+    embeddings_before = await service.embedding_repo.list_by_document(doc_id)
+    assert len(embeddings_before) >= 1
+
+    # 2. Soft delete document via service / API
+    del_res = client.delete(f"/api/v1/documents/{doc_id}", headers=user_auth_headers)
+    assert del_res.status_code == 200
+
+    # 3. Verify embedding records are wiped
+    embeddings_after = await service.embedding_repo.list_by_document(doc_id)
+    assert len(embeddings_after) == 0
+
