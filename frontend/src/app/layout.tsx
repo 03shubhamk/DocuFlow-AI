@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "../context/AuthContext";
+import { ToastProvider } from "../context/ToastContext";
+import { AppShell } from "../components/layout/AppShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,16 +16,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DocuFlow AI — Document Intelligence Platform",
+  title: "DocuFlow AI — Document Intelligence & Search Platform",
   description:
-    "Production-grade document intelligence and AI ingestion platform. Parse, structure, embed, and search enterprise documents with semantic precision.",
+    "Production-grade enterprise document intelligence, multi-format ingestion, structure-aware chunking, and semantic vector search platform.",
   keywords: [
     "document intelligence",
-    "AI",
     "semantic search",
-    "document parsing",
-    "RAG",
     "vector search",
+    "Docling",
+    "Qdrant",
+    "FastEmbed",
+    "OCR",
+    "chunking",
   ],
 };
 
@@ -33,7 +38,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body>{children}</body>
+      <body>
+        <AuthProvider>
+          <ToastProvider>
+            <AppShell>{children}</AppShell>
+          </ToastProvider>
+        </AuthProvider>
+      </body>
     </html>
   );
 }
