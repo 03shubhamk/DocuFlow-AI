@@ -1,12 +1,17 @@
 """
-DocuFlow AI — FastAPI Application Factory.
+DocuFlow AI — FastAPI Application Factory & Security Architecture.
 
 Builds and configures the FastAPI application with:
-- Structured logging
-- Middleware (correlation ID, CORS, security headers)
+- Structured logging & sensitive data redaction
+- Middleware pipeline:
+  1. Correlation ID tracking (X-Correlation-ID)
+  2. OWASP Security Headers (CSP, HSTS, X-Content-Type-Options)
+  3. Maximum Request Body Size enforcement (DoS protection)
+  4. Token Bucket Rate Limiting (per IP & Auth token)
+  5. Strict CORS Configuration
 - API v1 router (/api/v1)
 - Health check routes (/health)
-- Global exception handlers (RFC 7807)
+- Global exception handlers (RFC 7807 Problem Details)
 - Lifespan events (startup / shutdown)
 """
 
@@ -15,13 +20,18 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.middleware import (
     CorrelationIdMiddleware,
     docuflow_exception_handler,
     unhandled_exception_handler,
+)
+from app.api.security_middleware import (
+    MaxBodySizeMiddleware,
+    RateLimitingMiddleware,
+    SecurityHeadersMiddleware,
 )
 from app.api.v1.health import router as health_router
 from app.api.v1.router import api_router
@@ -65,9 +75,12 @@ def create_app() -> FastAPI:
     )
 
     # ------------------------------------------------------------------
-    # Middleware (order matters — outermost first)
+    # Middleware Pipeline (order matters — outermost first)
     # ------------------------------------------------------------------
     app.add_middleware(CorrelationIdMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(MaxBodySizeMiddleware)
+    app.add_middleware(RateLimitingMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
@@ -75,7 +88,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
-        expose_headers=["X-Correlation-ID"],
+        expose_headers=["X-Correlation-ID", "Retry-After"],
     )
 
     # ------------------------------------------------------------------
@@ -90,6 +103,18 @@ def create_app() -> FastAPI:
     # Health at root — reachable before /api/v1 prefix
     app.include_router(health_router)
 
+    # Prometheus exposition format at root /metrics
+    @app.get("/metrics", include_in_schema=False)
+    async def prometheus_metrics() -> Response:
+        from fastapi import Response as PlainResponse
+
+        from app.infrastructure.observability import get_metrics
+
+        return PlainResponse(
+            content=get_metrics().generate_prometheus_output(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
+
     # All versioned API routes under /api/v1
     app.include_router(api_router, prefix=settings.api_v1_str)
 
@@ -97,3 +122,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+

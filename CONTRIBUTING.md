@@ -51,4 +51,5 @@ We adhere to the **Conventional Commits** specification:
 
 - Provide a clear description of the problem solved.
 - Include unit/integration tests for any new functionality.
-- Ensure all CI status checks pass.
+- Ensure all CI status checks pass (`.github/workflows/ci.yml`).
+- For detailed workflow specifications, secret handling, and deployment gates, see [CI/CD Documentation](docs/cicd.md).

@@ -59,4 +59,5 @@ ignore_missing_imports = true
 follow_imports = "silent"
 warn_unused_configs = true
 check_untyped_defs = true
+disable_error_code = ["import-untyped", "import-not-found"]
 

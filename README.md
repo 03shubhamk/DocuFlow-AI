@@ -182,13 +182,32 @@ npm run dev
 
 ---
 
+## CI/CD Pipeline & Automated Releases
+
+DocuFlow AI includes production GitHub Actions workflows for continuous integration and gated releases:
+
+- **Pull Request CI** (`.github/workflows/ci.yml`): Parallel jobs for Ruff linting, formatting, Mypy static typing, Alembic migration validation, Pytest unit/integration test suite, Vitest frontend tests, Next.js production builds, security vulnerability audits (`pip-audit`, `npm audit`, Trivy), and multi-stage Docker build validation.
+- **Production Build & Deploy** (`.github/workflows/build.yml`): Automated multi-architecture container build, OCI semantic version tagging (`sha-*`, `v*`, `latest`), GitHub Container Registry (`ghcr.io`) publishing, staging deployment, and approval-gated production releases.
+
+For comprehensive details on setting up secrets, environment protection rules, and local simulation, see [CI/CD Documentation](docs/cicd.md).
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1: Project Foundation** — Clean architecture, Docker compose, FastAPI async scaffold, Next.js UI, test harnesses.
-- [ ] **Phase 2: Ingestion & Parsing Engine** — IBM Docling integration, multi-format parsing, layout analysis, S3 asset extraction.
-- [ ] **Phase 3: Chunking & Vector Ingestion** — Hierarchical chunker, FastEmbed embeddings, Qdrant indexing, batch pipeline.
-- [ ] **Phase 4: Retrieval & Query Engine** — Hybrid search (dense + sparse), reciprocal rank fusion, reranker, citation engine.
-- [ ] **Phase 5: Production Hardening & UI Polish** — Interactive viewer, live job progress via SSE, performance benchmarks.
+- [x] **Phase 2: Ingestion & Parsing Engine** — IBM Docling integration, multi-format parsing, layout analysis, S3 asset extraction.
+- [x] **Phase 3: Chunking & Vector Ingestion** — Hierarchical chunker, FastEmbed embeddings, Qdrant indexing, batch pipeline.
+- [x] **Phase 4: Retrieval & Query Engine** — Hybrid search (dense + sparse), reciprocal rank fusion, reranker, citation engine.
+- [x] **Phase 5: Document Normalization & Intelligent Chunking** — Unicode normalization, AST preservation, metadata extraction.
+- [x] **Phase 6: Embedding Generation & Qdrant Indexing** — FastEmbed provider abstraction, idempotent vector store indexer.
+- [x] **Phase 7: Production Document Search** — SearchService, dense/hybrid strategies, threshold filtering.
+- [x] **Phase 8: Complete Production Frontend** — 14 Next.js pages, dark mode glassmorphism UI, real-time job polling.
+- [x] **Phase 9: Production Security Hardening** — OWASP security headers, sliding window rate limiting, IDOR prevention, EICAR malware scanning.
+- [x] **Phase 10: Production Observability** — Prometheus metrics registry, OpenTelemetry tracing, W3C traceparent propagation, structured logging.
+- [x] **Phase 11: Comprehensive Testing** — 170+ unit, integration, Celery, and end-to-end test pyramid.
+- [x] **Phase 12: Performance & Scalability** — Database indexes, streaming memory bounding, Celery exponential backoff, benchmark suites.
+- [x] **Phase 13: Production CI/CD** — GitHub Actions PR quality gates, multi-stage Docker builds, security scanners, gated production deployments.
 
 ---
 

@@ -73,10 +73,22 @@ class Settings(BaseSettings):
     db_pool_recycle: int = Field(default=1800)
 
     # -------------------------------------------------------------------------
-    # Redis & Celery
+    # Redis & Celery Workers & Scalability
     # -------------------------------------------------------------------------
     redis_url: str = Field(default="redis://localhost:6379/0")
     celery_result_backend: str = Field(default="redis://localhost:6379/1")
+    celery_worker_concurrency: int = Field(default=4, description="Worker process concurrency count")
+    celery_task_time_limit: int = Field(default=600, description="Hard task timeout in seconds")
+    celery_task_soft_time_limit: int = Field(default=540, description="Soft task timeout in seconds")
+    celery_worker_prefetch_multiplier: int = Field(default=1, description="Prefetch multiplier per worker process")
+    celery_worker_max_tasks_per_child: int = Field(default=50, description="Max tasks before worker child process recycling")
+    celery_task_default_retry_delay: int = Field(default=5, description="Initial retry delay in seconds")
+    celery_task_retry_backoff_max: int = Field(default=300, description="Max exponential backoff delay in seconds")
+    celery_task_max_retries: int = Field(default=3, description="Maximum task retry attempts")
+    upload_memory_spool_threshold_bytes: int = Field(
+        default=5 * 1024 * 1024,
+        description="Max memory buffer before streaming spooling to disk (5MB)",
+    )
 
     # -------------------------------------------------------------------------
     # Object Storage — S3 / MinIO
@@ -125,6 +137,14 @@ class Settings(BaseSettings):
             raise ValueError(f"embedding_provider must be one of {allowed}")
         return val
 
+    # -------------------------------------------------------------------------
+    # Document Search & Retrieval
+    # -------------------------------------------------------------------------
+    search_default_top_k: int = Field(default=10, description="Default number of search results to return")
+    search_default_score_threshold: float = Field(default=0.0, description="Default minimum similarity score threshold")
+    search_hybrid_enabled: bool = Field(default=False, description="Enable hybrid dense+sparse vector search")
+    search_hybrid_dense_weight: float = Field(default=0.7, description="Weight for dense vector similarity in hybrid search")
+    search_hybrid_sparse_weight: float = Field(default=0.3, description="Weight for sparse lexical similarity in hybrid search")
 
     # -------------------------------------------------------------------------
     # Security — JWT
@@ -221,6 +241,19 @@ class Settings(BaseSettings):
         if val not in allowed:
             raise ValueError(f"chunking_strategy must be one of {allowed}")
         return val
+
+    # -------------------------------------------------------------------------
+    # Security Hardening & Rate Limiting Configuration
+    # -------------------------------------------------------------------------
+    rate_limit_enabled: bool = Field(default=True, description="Enable API rate limiting")
+    rate_limit_requests_per_minute: int = Field(default=120, description="Max requests per minute per client IP")
+    rate_limit_burst: int = Field(default=30, description="Max burst requests allowance")
+    max_request_body_size_bytes: int = Field(default=52_428_800, description="Max upload request payload size (50MB)")
+    max_json_body_size_bytes: int = Field(default=2_097_152, description="Max JSON request payload size (2MB)")
+    malware_scan_enabled: bool = Field(default=True, description="Enable malware scanning on uploads")
+    malware_scanner_type: str = Field(default="mock", description="Scanner backend: mock, clamav")
+    clamav_host: str = Field(default="localhost", description="ClamAV daemon host")
+    clamav_port: int = Field(default=3310, description="ClamAV daemon port")
 
     @property
     def is_production(self) -> bool:
