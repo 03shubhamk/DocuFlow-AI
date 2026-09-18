@@ -440,6 +440,33 @@ Regenerates dense vector representations for all chunks of the latest document v
   }
   ```
 
+#### `GET /api/v1/documents/{document_id}/structure`
+Retrieves the hierarchical section outline tree, page count, and structural metadata for the document.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response**: `200 OK`
+  ```json
+  {
+    "document_id": "8aa64e81-b518-4b72-97fc-112233445566",
+    "version_id": "18f92113-1122-3344-5566-778899aabbcc",
+    "title": "Quarterly_Financials_Q3.pdf",
+    "original_filename": "Quarterly_Financials_Q3.pdf",
+    "file_type": ".pdf",
+    "page_count": 12,
+    "chunk_count": 48,
+    "language": "en",
+    "table_count": 4,
+    "figure_count": 2,
+    "section_hierarchy": [
+      {
+        "title": "1. Executive Summary",
+        "level": 1,
+        "page": 1,
+        "children": []
+      }
+    ]
+  }
+  ```
+
 ---
 
 ### 4.3 Processing Jobs (`/api/v1/jobs`)
@@ -475,38 +502,49 @@ Aborts an active job and revokes the corresponding Celery task.
 ### 4.4 Semantic & Hybrid Search (`/api/v1/search`)
 
 #### `POST /api/v1/search`
-Performs vector semantic or hybrid search over document chunks.
+Performs multi-tenant semantic vector or hybrid search over indexed document chunks with metadata filtering and scoring.
+- **Headers**: `Authorization: Bearer <token>`
 - **Request Body**:
   ```json
   {
     "query": "What was the operating revenue in Q3?",
-    "limit": 5,
-    "score_threshold": 0.65,
+    "top_k": 10,
+    "document_ids": ["8aa64e81-b518-4b72-97fc-112233445566"],
+    "page": 1,
     "filters": {
-      "document_ids": ["8aa64e81-b518-4b72-97fc-112233445566"],
-      "file_types": ["application/pdf"],
-      "page_numbers": [1, 2, 3]
+      "mime_type": ".pdf"
     },
-    "hybrid": true
+    "score_threshold": 0.5,
+    "strategy": "dense"
   }
   ```
 - **Response**: `200 OK`
   ```json
   {
-    "query": "What was the operating revenue in Q3?",
-    "total_results": 1,
     "results": [
       {
         "chunk_id": "a901e012-3344-5566-7788-99aabbccddee",
         "document_id": "8aa64e81-b518-4b72-97fc-112233445566",
-        "document_title": "Quarterly_Financials_Q3.pdf",
+        "document_name": "Quarterly_Financials_Q3.pdf",
         "score": 0.892,
-        "content": "Operating revenue for Q3 2026 reached $14.2M, representing a 15% increase year-over-year...",
-        "heading_hierarchy": ["1. Executive Summary", "1.2 Revenue Breakdown"],
+        "text": "Operating revenue for Q3 2026 reached $14.2M...",
+        "page_number": 1,
         "page_numbers": [1],
-        "chunk_index": 4
+        "section": "Financial Overview > Operating Revenue",
+        "heading_hierarchy": ["1. Executive Summary", "1.2 Revenue Breakdown"],
+        "chunk_index": 4,
+        "metadata": {
+          "token_count": 84
+        }
       }
-    ]
+    ],
+    "total": 1,
+    "query": "What was the operating revenue in Q3?",
+    "top_k": 10,
+    "page": null,
+    "page_size": null,
+    "strategy_used": "dense",
+    "duration_ms": 12.4
   }
   ```
 
