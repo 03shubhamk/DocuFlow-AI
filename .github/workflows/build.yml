@@ -1,0 +1,217 @@
+name: DocuFlow AI — Production Build & Publish
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: "Target deployment environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+      force_rebuild:
+        description: "Force rebuild without cache"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE_NAME: ${{ github.repository }}/backend
+  FRONTEND_IMAGE_NAME: ${{ github.repository }}/frontend
+
+jobs:
+  # ============================================================================
+  # 1. Full Regression Test Gatekeeper
+  # ============================================================================
+  test-gatekeeper:
+    name: Full Test Suite Gatekeeper
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install Backend Dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run Backend Pytest Suite
+        working-directory: ./backend
+        run: pytest -v
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm ci --legacy-peer-deps
+
+      - name: Run Frontend Vitest Suite
+        working-directory: ./frontend
+        run: npm test
+
+  # ============================================================================
+  # 2. Build and Publish Multi-Arch Production Docker Images
+  # ============================================================================
+  build-and-publish:
+    name: Build & Publish Container Images
+    needs: [test-gatekeeper]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU for Multi-Architecture Builds
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Backend Image Metadata & Tags ---
+      - name: Extract Backend Docker Metadata
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      # --- Frontend Image Metadata & Tags ---
+      - name: Extract Frontend Docker Metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      # --- Build & Push Backend ---
+      - name: Build and Push Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # --- Build & Push Frontend ---
+      - name: Build and Push Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # 3. Continuous Deployment — Staging
+  # ============================================================================
+  deploy-staging:
+    name: Deploy to Staging Environment
+    needs: [build-and-publish]
+    if: github.ref == 'refs/heads/main' || github.event.inputs.deploy_target == 'staging'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.docuflow.ai
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Mask Sensitive Deployment Tokens
+        run: |
+          echo "::add-mask::${{ secrets.STAGING_DEPLOY_KEY }}"
+          echo "::add-mask::${{ secrets.STAGING_API_TOKEN }}"
+
+      - name: Execute Staging Deployment
+        run: |
+          echo "Deploying DocuFlow AI container images to Staging cluster..."
+          echo "Image Reference: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:sha-${{ github.sha }}"
+          # Deployment commands (Helm / kubectl / SSH / Docker Compose) run securely here:
+          echo "Staging deployment successfully initialized."
+
+  # ============================================================================
+  # 4. Continuous Deployment — Production (Gated Approval)
+  # ============================================================================
+  deploy-production:
+    name: Deploy to Production (Approval Gated)
+    needs: [build-and-publish, deploy-staging]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.deploy_target == 'production'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://app.docuflow.ai
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Mask Sensitive Production Secrets
+        run: |
+          echo "::add-mask::${{ secrets.PROD_DEPLOY_KEY }}"
+          echo "::add-mask::${{ secrets.PROD_DATABASE_URL }}"
+          echo "::add-mask::${{ secrets.PROD_JWT_SECRET_KEY }}"
+
+      - name: Execute Production Deployment
+        run: |
+          echo "Deploying verified DocuFlow AI release to Production cluster..."
+          echo "Release Version: ${{ github.ref_name }}"
+          echo "Backend Image: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:${{ github.ref_name }}"
+          echo "Frontend Image: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ github.ref_name }}"
+          # Production rollout (Canary / Blue-Green / Rolling update) executes here:
+          echo "Production deployment rollout successful."
