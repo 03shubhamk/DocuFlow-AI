@@ -1,17 +1,12 @@
 version: "3.8"
 
-# ==============================================================================
-# DocuFlow AI — Default Local Development Docker Compose
-# For specific environments, see:
-#   - docker-compose.dev.yml  (Active development with hot-reload & debug logs)
-#   - docker-compose.test.yml (Ephemeral test suite runner)
-#   - docker-compose.prod.yml (Hardened production deployment stack)
-# ==============================================================================
-
 services:
+  # ----------------------------------------------------------------------------
+  # PostgreSQL 16 (Development)
+  # ----------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
-    container_name: docuflow-postgres
+    container_name: docuflow-dev-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-docuflow}
@@ -20,7 +15,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - dev_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-docuflow} -d ${POSTGRES_DB:-docuflow_db}"]
       interval: 5s
@@ -28,45 +23,54 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - docuflow-network
+      - docuflow-dev-network
 
+  # ----------------------------------------------------------------------------
+  # Redis 7 (Development Cache & Message Broker)
+  # ----------------------------------------------------------------------------
   redis:
     image: redis:7.2-alpine
-    container_name: docuflow-redis
+    container_name: docuflow-dev-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - dev_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
     networks:
-      - docuflow-network
+      - docuflow-dev-network
 
+  # ----------------------------------------------------------------------------
+  # Qdrant Vector Database (Development)
+  # ----------------------------------------------------------------------------
   qdrant:
     image: qdrant/qdrant:v1.9.7
-    container_name: docuflow-qdrant
+    container_name: docuflow-dev-qdrant
     restart: unless-stopped
     ports:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - qdrant_data:/qdrant/storage
+      - dev_qdrant_data:/qdrant/storage
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/6333' || exit 1"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
       retries: 5
       start_period: 10s
     networks:
-      - docuflow-network
+      - docuflow-dev-network
 
+  # ----------------------------------------------------------------------------
+  # MinIO Object Storage (Development)
+  # ----------------------------------------------------------------------------
   minio:
     image: minio/minio:RELEASE.2024-05-10T01-41-38Z
-    container_name: docuflow-minio
+    container_name: docuflow-dev-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -76,19 +80,22 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio_data:/data
+      - dev_minio_data:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
       retries: 5
       start_period: 10s
     networks:
-      - docuflow-network
+      - docuflow-dev-network
 
+  # ----------------------------------------------------------------------------
+  # MinIO Auto-Bucket Creator (Development Init)
+  # ----------------------------------------------------------------------------
   minio-init:
     image: minio/mc:RELEASE.2024-05-09T17-04-24Z
-    container_name: docuflow-minio-init
+    container_name: docuflow-dev-minio-init
     depends_on:
       minio:
         condition: service_healthy
@@ -99,17 +106,21 @@ services:
       exit 0;
       "
     networks:
-      - docuflow-network
+      - docuflow-dev-network
 
+  # ----------------------------------------------------------------------------
+  # Backend API Server (Development with Hot Reloading)
+  # ----------------------------------------------------------------------------
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: docuflow-backend
+    container_name: docuflow-dev-backend
     restart: unless-stopped
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug"]
     environment:
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENVIRONMENT: development
+      LOG_LEVEL: DEBUG
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://docuflow:docuflow_dev_secret_change_in_prod@postgres:5432/docuflow_db}
       DATABASE_SYNC_URL: ${DATABASE_SYNC_URL:-postgresql://docuflow:docuflow_dev_secret_change_in_prod@postgres:5432/docuflow_db}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -121,6 +132,8 @@ services:
       QDRANT_HOST: ${QDRANT_HOST:-qdrant}
       QDRANT_PORT: ${QDRANT_PORT:-6333}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev_insecure_jwt_secret_key_change_in_production_min_32_chars!}
+    volumes:
+      - ./backend/app:/app/app:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -133,24 +146,27 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/live || python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')\""]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/live || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
     networks:
-      - docuflow-network
+      - docuflow-dev-network
 
+  # ----------------------------------------------------------------------------
+  # Celery Ingestion & Indexing Worker (Development)
+  # ----------------------------------------------------------------------------
   celery-worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: docuflow-celery-worker
+    container_name: docuflow-dev-celery-worker
     restart: unless-stopped
-    command: ["celery", "-A", "app.infrastructure.tasks.celery_app", "worker", "-l", "info", "-Q", "docuflow.parsing,docuflow.indexing,celery"]
+    command: ["celery", "-A", "app.infrastructure.tasks.celery_app", "worker", "-l", "debug", "-Q", "docuflow.parsing,docuflow.indexing,celery", "--concurrency", "2"]
     environment:
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENVIRONMENT: development
+      LOG_LEVEL: DEBUG
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://docuflow:docuflow_dev_secret_change_in_prod@postgres:5432/docuflow_db}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
@@ -160,6 +176,8 @@ services:
       S3_BUCKET_DOCUMENTS: ${S3_BUCKET_DOCUMENTS:-docuflow-documents}
       QDRANT_HOST: ${QDRANT_HOST:-qdrant}
       QDRANT_PORT: ${QDRANT_PORT:-6333}
+    volumes:
+      - ./backend/app:/app/app:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -168,37 +186,34 @@ services:
       minio:
         condition: service_healthy
     networks:
-      - docuflow-network
+      - docuflow-dev-network
 
+  # ----------------------------------------------------------------------------
+  # Frontend Web Dashboard (Development with Fast Refresh)
+  # ----------------------------------------------------------------------------
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: docuflow-frontend
+    container_name: docuflow-dev-frontend
     restart: unless-stopped
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
     ports:
       - "3000:3000"
     depends_on:
       backend:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
     networks:
-      - docuflow-network
+      - docuflow-dev-network
 
 volumes:
-  postgres_data:
-  redis_data:
-  qdrant_data:
-  minio_data:
+  dev_postgres_data:
+  dev_redis_data:
+  dev_qdrant_data:
+  dev_minio_data:
 
 networks:
-  docuflow-network:
+  docuflow-dev-network:
     driver: bridge

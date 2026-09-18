@@ -1,0 +1,27 @@
+# Git & IDE
+.git
+.gitignore
+.vscode
+.idea
+
+# Secrets
+.env*
+!.env.example
+
+# Node build artifacts
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+.vitest/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# E2E & Tests
+e2e/
+playwright-report/
+test-results/
