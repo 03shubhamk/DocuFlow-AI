@@ -105,7 +105,20 @@ class InMemoryVectorStore(VectorStore):
             if filters:
                 match = True
                 for k, v in filters.items():
-                    if v is not None and str(pt.payload.get(k)) != str(v):
+                    if v is None:
+                        continue
+                    if k == "document_ids" and isinstance(v, (list, set, tuple)):
+                        doc_id_val = str(pt.payload.get("document_id", ""))
+                        if doc_id_val not in [str(item) for item in v]:
+                            match = False
+                            break
+                    elif k == "page_number":
+                        page_num = pt.payload.get("page_number")
+                        page_nums = pt.payload.get("page_numbers", [])
+                        if page_num != v and v not in page_nums:
+                            match = False
+                            break
+                    elif str(pt.payload.get(k)) != str(v):
                         match = False
                         break
                 if not match:

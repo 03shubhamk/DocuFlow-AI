@@ -227,15 +227,23 @@ class QdrantVectorStore(VectorStore):
 
             query_filter = None
             if filters:
-                conditions = []
+                conditions: list[Any] = []
                 for key, val in filters.items():
                     if val is not None:
-                        conditions.append(
-                            models.FieldCondition(
-                                key=key,
-                                match=models.MatchValue(value=str(val)),
+                        if isinstance(val, (list, tuple, set)):
+                            conditions.append(
+                                models.FieldCondition(
+                                    key="document_id",
+                                    match=models.MatchAny(any=[str(x) for x in val]),
+                                )
                             )
-                        )
+                        else:
+                            conditions.append(
+                                models.FieldCondition(
+                                    key=key,
+                                    match=models.MatchValue(value=str(val)),
+                                )
+                            )
                 if conditions:
                     query_filter = models.Filter(must=conditions)
 
