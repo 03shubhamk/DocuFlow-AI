@@ -37,6 +37,7 @@ from app.application.documents.schemas import (
     ReindexResponse,
 )
 from app.application.documents.service import DocumentService
+from app.application.search.schemas import DocumentStructureResponse
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -247,6 +248,31 @@ async def reindex_document(
         document_id=document_id,
         current_user=current_user.to_entity(),
     )
+
+
+@router.get(
+    "/{document_id}/structure",
+    response_model=DocumentStructureResponse,
+    summary="Get document hierarchical structure and outline",
+    description="Retrieve document section hierarchy outline, page count, chunk statistics, and language metadata.",
+)
+async def get_document_structure(
+    document_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    storage: StorageDep,
+    version_id: Annotated[
+        uuid.UUID | None,
+        Query(description="Filter structure by version UUID (defaults to latest)"),
+    ] = None,
+) -> DocumentStructureResponse:
+    service = DocumentService(session=db, storage=storage)
+    return await service.get_document_structure(
+        document_id=document_id,
+        current_user=current_user.to_entity(),
+        version_id=version_id,
+    )
+
 
 
 
