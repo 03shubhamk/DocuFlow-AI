@@ -13,12 +13,13 @@ import asyncio
 from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.api.dependencies import DbSession, SettingsDep
 from app.infrastructure.logging_config import get_logger
+from app.infrastructure.observability import get_metrics
 
 router = APIRouter(prefix="/health", tags=["health"])
 logger = get_logger(__name__)
@@ -32,7 +33,7 @@ async def liveness() -> dict[str, str]:
 
 @router.get("/ready", summary="Readiness probe")
 async def readiness(settings: SettingsDep, db: DbSession) -> JSONResponse:
-    """Checks connectivity to all critical dependencies.
+    """Checks connectivity to all critical dependencies without exposing internal network/stack details.
 
     Returns 200 if all dependencies are healthy, 503 if any are degraded.
     """
@@ -45,7 +46,7 @@ async def readiness(settings: SettingsDep, db: DbSession) -> JSONResponse:
         checks["postgresql"] = {"status": "ok"}
     except Exception as e:
         logger.error("health_check_postgres_failed", error=str(e))
-        checks["postgresql"] = {"status": "error", "detail": str(e)}
+        checks["postgresql"] = {"status": "unhealthy"}
         healthy = False
 
     # --- Redis ---
@@ -56,7 +57,7 @@ async def readiness(settings: SettingsDep, db: DbSession) -> JSONResponse:
         checks["redis"] = {"status": "ok"}
     except Exception as e:
         logger.error("health_check_redis_failed", error=str(e))
-        checks["redis"] = {"status": "error", "detail": str(e)}
+        checks["redis"] = {"status": "unhealthy"}
         healthy = False
 
     # --- Qdrant ---
@@ -72,7 +73,7 @@ async def readiness(settings: SettingsDep, db: DbSession) -> JSONResponse:
                 raise Exception(f"HTTP {resp.status_code}")
     except Exception as e:
         logger.error("health_check_qdrant_failed", error=str(e))
-        checks["qdrant"] = {"status": "error", "detail": str(e)}
+        checks["qdrant"] = {"status": "unhealthy"}
         healthy = False
 
     # --- MinIO / S3 ---
@@ -92,7 +93,7 @@ async def readiness(settings: SettingsDep, db: DbSession) -> JSONResponse:
         checks["minio"] = {"status": "ok"}
     except Exception as e:
         logger.error("health_check_minio_failed", error=str(e))
-        checks["minio"] = {"status": "error", "detail": str(e)}
+        checks["minio"] = {"status": "unhealthy"}
         healthy = False
 
     status_code = 200 if healthy else 503
@@ -102,6 +103,16 @@ async def readiness(settings: SettingsDep, db: DbSession) -> JSONResponse:
             "status": "healthy" if healthy else "degraded",
             "checks": checks,
         },
+    )
+
+
+@router.get("/metrics", summary="Prometheus Metrics", response_class=Response)
+async def metrics() -> Response:
+    """Returns application metrics in standard Prometheus exposition format."""
+    prometheus_data = get_metrics().generate_prometheus_output()
+    return Response(
+        content=prometheus_data,
+        media_type="text/plain; version=0.0.4; charset=utf-8",
     )
 
 
