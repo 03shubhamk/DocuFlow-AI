@@ -36,9 +36,12 @@ celery_app.conf.update(
     # Retry & visibility
     broker_transport_options={"visibility_timeout": 3600},
     task_acks_late=True,
-    worker_prefetch_multiplier=1,
-    # Worker memory recycling (important for Docling/OCR workers)
-    worker_max_tasks_per_child=50,
+    worker_prefetch_multiplier=_settings.celery_worker_prefetch_multiplier,
+    worker_concurrency=_settings.celery_worker_concurrency,
+    task_time_limit=_settings.celery_task_time_limit,
+    task_soft_time_limit=_settings.celery_task_soft_time_limit,
+    # Worker memory recycling (prevents memory bloat across OCR/Docling runs)
+    worker_max_tasks_per_child=_settings.celery_worker_max_tasks_per_child,
     # Queue definitions
     task_queues={
         "docuflow.parsing": {"exchange": "docuflow.parsing", "routing_key": "parsing"},

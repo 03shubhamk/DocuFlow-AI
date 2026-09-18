@@ -41,9 +41,31 @@ class MockDocumentProcessor(DocumentProcessor):
             markdown = raw_text if file_ext != ".html" else f"# Extracted HTML\n\n{raw_text}"
             plain_text = raw_text
         elif file_ext == ".pdf":
-            raw_text = "Extracted PDF Document Content\n\n## Section 1: Executive Summary\n\nThis is a processed PDF document."
-            markdown = "# Processed Document\n\n## Section 1: Executive Summary\n\nThis is a processed PDF document.\n\n| Column 1 | Column 2 |\n|---|---|\n| Data A | Data B |"
-            plain_text = "Processed Document\nSection 1: Executive Summary\nThis is a processed PDF document."
+            try:
+                decoded = content_bytes.decode("utf-8", errors="ignore")
+                lines = [
+                    line.strip()
+                    for line in decoded.splitlines()
+                    if line.strip()
+                    and not line.startswith("%PDF")
+                    and "obj" not in line
+                    and "endobj" not in line
+                    and "xref" not in line
+                    and "trailer" not in line
+                    and "startxref" not in line
+                    and "%%EOF" not in line
+                ]
+                custom_text = "\n\n".join(lines)
+            except Exception:
+                custom_text = ""
+
+            if custom_text and len(custom_text) > 5:
+                markdown = f"# Processed Document\n\n{custom_text}"
+                plain_text = custom_text
+            else:
+                raw_text = "Extracted PDF Document Content\n\n## Section 1: Executive Summary\n\nThis is a processed PDF document."
+                markdown = "# Processed Document\n\n## Section 1: Executive Summary\n\nThis is a processed PDF document.\n\n| Column 1 | Column 2 |\n|---|---|\n| Data A | Data B |"
+                plain_text = "Processed Document\nSection 1: Executive Summary\nThis is a processed PDF document."
         elif file_ext in {".docx", ".pptx", ".xlsx"}:
             markdown = f"# Office Document ({file_ext})\n\nExtracted content from {source_path.name}."
             plain_text = f"Office Document ({file_ext})\nExtracted content from {source_path.name}."
@@ -95,9 +117,21 @@ class MockDocumentProcessor(DocumentProcessor):
                 b"\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
             )
 
+        page_count = 1
+        if file_ext == ".pdf":
+            import re
+            pdf_str = content_bytes.decode("latin1", errors="ignore")
+            pdf_pages = len(re.findall(r"/Type\s*/Page\b", pdf_str))
+            if pdf_pages > 0:
+                page_count = pdf_pages
+            else:
+                page_markers = re.findall(r"\bPage\s+\d+\b", plain_text)
+                if page_markers:
+                    page_count = len(set(page_markers))
+
         metadata: dict[str, Any] = {
             "title": source_path.stem.replace("_", " ").title(),
-            "page_count": 1,
+            "page_count": page_count,
             "table_count": 1,
             "figure_count": len(figures),
             "word_count": len(plain_text.split()),

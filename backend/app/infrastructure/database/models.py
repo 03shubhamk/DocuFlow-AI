@@ -109,6 +109,7 @@ class DocumentModel(Base):
     __tablename__ = "documents"
     __table_args__ = (
         Index("ix_docs_tenant_deleted_created", "tenant_id", "is_deleted", "created_at"),
+        Index("ix_docs_tenant_owner_created", "tenant_id", "owner_id", "is_deleted", "created_at"),
         Index("ix_docs_tenant_checksum", "tenant_id", "checksum_sha256"),
     )
 
@@ -202,6 +203,7 @@ class ProcessingJobModel(Base):
     __table_args__ = (
         Index("ix_jobs_status_created", "status", "created_at"),
         Index("ix_jobs_document_id", "document_id", "created_at"),
+        Index("ix_jobs_doc_status_created", "document_id", "status", "created_at"),
         Index("ix_jobs_celery_task_id", "celery_task_id"),
     )
 
@@ -238,6 +240,7 @@ class DocumentChunkModel(Base):
     __table_args__ = (
         UniqueConstraint("version_id", "chunk_index", name="uq_chunk_version_index"),
         Index("ix_chunks_version_index", "version_id", "chunk_index"),
+        Index("ix_chunks_doc_index", "document_id", "chunk_index"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)

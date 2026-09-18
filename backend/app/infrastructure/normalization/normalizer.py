@@ -73,7 +73,7 @@ class DocumentNormalizer:
         if not json_dict or not isinstance(json_dict, dict):
             return json_dict
 
-        normalized_dict = {}
+        normalized_dict: dict[str, Any] = {}
         for key, value in json_dict.items():
             if isinstance(value, str):
                 normalized_dict[key] = cls.clean_text(value)

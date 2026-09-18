@@ -168,6 +168,7 @@ class DocumentRepository:
         storage_path: str,
         checksum_sha256: str,
         id: uuid.UUID | None = None,
+        current_version_id: uuid.UUID | None = None,
     ) -> DocumentModel:
         doc = DocumentModel(
             id=id or uuid.uuid4(),
@@ -179,6 +180,7 @@ class DocumentRepository:
             file_size_bytes=file_size_bytes,
             storage_path=storage_path,
             checksum_sha256=checksum_sha256,
+            current_version_id=current_version_id,
             is_deleted=False,
         )
         self.session.add(doc)
@@ -325,8 +327,10 @@ class DocumentVersionRepository:
         storage_path: str,
         file_size_bytes: int,
         checksum_sha256: str,
+        id: uuid.UUID | None = None,
     ) -> DocumentVersionModel:
         version = DocumentVersionModel(
+            id=id or uuid.uuid4(),
             document_id=document_id,
             version_number=version_number,
             storage_path=storage_path,

@@ -8,7 +8,7 @@ import traceback
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ from app.application.documents.validation import (
     process_and_validate_upload_stream,
 )
 from app.application.embeddings.service import EmbeddingService
+from app.application.search.schemas import DocumentStructureResponse
 from app.config import get_settings
 from app.domain.entities import User, UserRole
 from app.domain.exceptions import (
@@ -138,6 +139,7 @@ class DocumentService:
         doc_title = title.strip() if title and title.strip() else validated.sanitized_filename
 
         # 4. Transactional database insertion
+        version_id = uuid.uuid4()
         doc_model = await self.document_repo.create(
             id=document_id,
             tenant_id=current_user.tenant_id,
@@ -148,17 +150,17 @@ class DocumentService:
             file_size_bytes=validated.size_bytes,
             storage_path=storage_path,
             checksum_sha256=validated.checksum_sha256,
+            current_version_id=version_id,
         )
 
         version_model = await self.version_repo.create(
+            id=version_id,
             document_id=doc_model.id,
             version_number=version_number,
             storage_path=storage_path,
             file_size_bytes=validated.size_bytes,
             checksum_sha256=validated.checksum_sha256,
         )
-
-        doc_model.current_version_id = version_model.id
 
         await self.asset_repo.create(
             document_id=doc_model.id,
@@ -908,6 +910,89 @@ class DocumentService:
             dimension=self.embedding_service.dimension,
             message="Document re-indexed successfully.",
         )
+
+    async def get_document_structure(
+        self,
+        document_id: uuid.UUID,
+        current_user: User,
+        version_id: uuid.UUID | None = None,
+    ) -> DocumentStructureResponse:
+        """Fetch hierarchical structural outline, page count, and section map for a document version."""
+        owner_id = None if current_user.role == UserRole.ADMIN else current_user.id
+        doc = await self.document_repo.get_by_id_scoped(
+            document_id=document_id,
+            tenant_id=current_user.tenant_id,
+            owner_id=owner_id,
+            include_deleted=False,
+        )
+        if doc is None:
+            raise DocumentNotFoundException(str(document_id))
+
+        if version_id is not None:
+            version = await self.version_repo.get_by_id(version_id)
+        else:
+            version = await self.version_repo.get_latest_for_document(document_id)
+
+        if version is None:
+            raise DocumentNotFoundException(f"Version for document {document_id}")
+
+        meta_key = f"tenants/{doc.tenant_id}/documents/{doc.id}/v{version.version_number}/artifacts/metadata.json"
+        section_hierarchy: list[dict[str, Any]] = []
+        page_count = 1
+        table_count = 0
+        figure_count = 0
+        language = "en"
+        chunk_count = 0
+
+        if await self.storage.exists(meta_key):
+            try:
+                meta_bytes = await self.storage.download(meta_key)
+                meta_data = json.loads(meta_bytes.decode("utf-8"))
+                section_hierarchy = meta_data.get("section_hierarchy", [])
+                page_count = meta_data.get("page_count", 1)
+                table_count = meta_data.get("table_count", 0)
+                figure_count = meta_data.get("figure_count", 0)
+                language = meta_data.get("language", "en")
+                chunk_count = meta_data.get("chunk_count", 0)
+            except Exception as meta_err:
+                logger.warning("failed_to_read_metadata_json", error=str(meta_err))
+
+        if chunk_count == 0:
+            chunk_count = await self.chunk_repo.count_by_version(version.id)
+
+        if not section_hierarchy:
+            chunks = await self.chunk_repo.list_by_version(version.id, offset=0, limit=100)
+            seen_sections: set[str] = set()
+            for c in chunks:
+                if c.heading_hierarchy:
+                    top_h = str(c.heading_hierarchy[0])
+                    if top_h not in seen_sections:
+                        seen_sections.add(top_h)
+                        page_num = c.page_numbers[0] if c.page_numbers else 1
+                        section_hierarchy.append({
+                            "title": top_h,
+                            "level": 1,
+                            "page": page_num,
+                            "children": [
+                                {"title": str(sub), "level": idx + 2, "page": page_num, "children": []}
+                                for idx, sub in enumerate(c.heading_hierarchy[1:])
+                            ],
+                        })
+
+        return DocumentStructureResponse(
+            document_id=doc.id,
+            version_id=version.id,
+            title=doc.title,
+            original_filename=doc.original_filename,
+            file_type=doc.file_type,
+            page_count=page_count,
+            chunk_count=chunk_count,
+            language=language,
+            table_count=table_count,
+            figure_count=figure_count,
+            section_hierarchy=section_hierarchy,
+        )
+
 
 
 

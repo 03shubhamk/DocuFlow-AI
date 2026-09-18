@@ -32,7 +32,13 @@ def build_engine(settings: Settings, use_null_pool: bool = False):
         "future": True,
     }
 
-    if use_null_pool:
+    if "sqlite" in settings.database_url:
+        kwargs["connect_args"] = {"check_same_thread": False}
+        if ":memory:" in settings.database_url:
+            from sqlalchemy.pool import StaticPool
+
+            kwargs["poolclass"] = StaticPool
+    elif use_null_pool:
         kwargs["poolclass"] = NullPool
     else:
         kwargs["pool_size"] = settings.db_pool_size

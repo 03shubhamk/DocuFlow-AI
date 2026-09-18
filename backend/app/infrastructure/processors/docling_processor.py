@@ -31,8 +31,8 @@ class DoclingDocumentProcessor(DocumentProcessor):
 
     def __init__(self) -> None:
         self.settings = get_settings()
-        self._converter = None
-        self._init_error = None
+        self._converter: Any = None
+        self._init_error: Exception | None = None
 
     def _build_converter(self, options: ProcessingOptions) -> Any:
         """Construct a configured Docling DocumentConverter instance."""
@@ -65,7 +65,7 @@ class DoclingDocumentProcessor(DocumentProcessor):
                 except (ImportError, Exception) as ocr_err:
                     logger.warning("ocr_provider_init_failed", provider=ocr_prov, error=str(ocr_err))
 
-            format_options = {
+            format_options: dict[Any, Any] = {
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
                 InputFormat.IMAGE: PdfFormatOption(pipeline_options=pipeline_options),
             }
