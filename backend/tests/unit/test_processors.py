@@ -80,20 +80,40 @@ async def test_mock_processor_image_ocr() -> None:
 
 
 def test_docling_processor_converter_configuration() -> None:
-    from unittest.mock import MagicMock, patch
+    import sys
+    from unittest.mock import MagicMock
 
-    processor = DoclingDocumentProcessor()
+    mock_docling = MagicMock()
+    mock_docling_converter = MagicMock()
+    mock_docling_pipeline = MagicMock()
+    mock_docling_base = MagicMock()
 
-    with (
-        patch("docling.document_converter.DocumentConverter", return_value=MagicMock()) as mock_conv_cls,
-        patch("docling.datamodel.pipeline_options.EasyOcrOptions", return_value=MagicMock()),
-        patch("docling.datamodel.pipeline_options.TesseractOcrOptions", return_value=MagicMock()),
-    ):
+    mock_converter_cls = MagicMock()
+    mock_docling_converter.DocumentConverter = mock_converter_cls
+    mock_docling_converter.PdfFormatOption = MagicMock()
+    mock_docling_base.InputFormat = MagicMock()
+    mock_docling_pipeline.PdfPipelineOptions = MagicMock()
+    mock_docling_pipeline.EasyOcrOptions = MagicMock()
+    mock_docling_pipeline.TesseractOcrOptions = MagicMock()
+
+    modules_to_patch = {
+        "docling": mock_docling,
+        "docling.document_converter": mock_docling_converter,
+        "docling.datamodel": MagicMock(),
+        "docling.datamodel.base_models": mock_docling_base,
+        "docling.datamodel.pipeline_options": mock_docling_pipeline,
+    }
+
+    from unittest.mock import patch
+
+    with patch.dict(sys.modules, modules_to_patch):
+        processor = DoclingDocumentProcessor()
+
         # Test EasyOCR provider options
         opts_easyocr = ProcessingOptions(do_ocr=True, ocr_provider="easyocr", ocr_languages=["en", "es"])
         conv_easy = processor._build_converter(opts_easyocr)
         assert conv_easy is not None
-        assert mock_conv_cls.called
+        assert mock_converter_cls.called
 
         # Test Tesseract provider options
         opts_tesseract = ProcessingOptions(do_ocr=True, ocr_provider="tesseract", ocr_languages=["en"])

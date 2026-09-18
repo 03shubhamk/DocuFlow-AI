@@ -187,3 +187,75 @@ def admin_auth_headers(test_settings: Settings, test_admin: UserModel) -> dict[s
         email=test_admin.email,
     )
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+async def test_tenant_b(db_session: AsyncSession) -> TenantModel:
+    tenant = TenantModel(
+        id=uuid.uuid4(),
+        name="Beta Industries",
+        slug=f"beta-{uuid.uuid4().hex[:6]}",
+        is_active=True,
+    )
+    db_session.add(tenant)
+    await db_session.commit()
+    await db_session.refresh(tenant)
+    return tenant
+
+
+@pytest.fixture
+async def test_user_b(db_session: AsyncSession, test_tenant_b: TenantModel) -> UserModel:
+    user = UserModel(
+        id=uuid.uuid4(),
+        tenant_id=test_tenant_b.id,
+        email="user_b@beta.com",
+        hashed_password=hash_password("UserBPassword123!"),
+        full_name="User B (Isolated Tenant)",
+        role=UserRole.USER.value,
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def user_b_auth_headers(test_settings: Settings, test_user_b: UserModel) -> dict[str, str]:
+    token, _ = create_access_token(
+        settings=test_settings,
+        subject=str(test_user_b.id),
+        tenant_id=str(test_user_b.tenant_id),
+        role=test_user_b.role,
+        email=test_user_b.email,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+async def test_analyst(db_session: AsyncSession, test_tenant: TenantModel) -> UserModel:
+    analyst = UserModel(
+        id=uuid.uuid4(),
+        tenant_id=test_tenant.id,
+        email="analyst@acme.com",
+        hashed_password=hash_password("AnalystPassword123!"),
+        full_name="Analyst User",
+        role=UserRole.ANALYST.value,
+        is_active=True,
+    )
+    db_session.add(analyst)
+    await db_session.commit()
+    await db_session.refresh(analyst)
+    return analyst
+
+
+@pytest.fixture
+def analyst_auth_headers(test_settings: Settings, test_analyst: UserModel) -> dict[str, str]:
+    token, _ = create_access_token(
+        settings=test_settings,
+        subject=str(test_analyst.id),
+        tenant_id=str(test_analyst.tenant_id),
+        role=test_analyst.role,
+        email=test_analyst.email,
+    )
+    return {"Authorization": f"Bearer {token}"}
