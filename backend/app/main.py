@@ -55,6 +55,65 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         environment=settings.environment,
         api_version="v1",
     )
+
+    if "sqlite" in settings.database_url:
+        try:
+            import uuid
+            from sqlalchemy import select
+            from app.infrastructure.database.models import Base, TenantModel, UserModel
+            from app.infrastructure.database.session import build_engine, build_session_factory
+            from app.infrastructure.security.tokens import hash_password
+
+            engine = build_engine(settings)
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+            session_factory = build_session_factory(engine)
+            async with session_factory() as session:
+                # 1. Ensure default tenant exists
+                result_t = await session.execute(
+                    select(TenantModel).where(TenantModel.slug == "default-tenant")
+                )
+                default_tenant = result_t.scalar_one_or_none()
+                if not default_tenant:
+                    default_tenant = TenantModel(
+                        id=uuid.uuid4(),
+                        name="Default Organization",
+                        slug="default-tenant",
+                        is_active=True,
+                    )
+                    session.add(default_tenant)
+                    await session.flush()
+
+                # 2. Ensure demo users exist
+                result_u = await session.execute(
+                    select(UserModel).where(UserModel.email == "admin@docuflow.ai")
+                )
+                if not result_u.scalar_one_or_none():
+                    admin = UserModel(
+                        id=uuid.uuid4(),
+                        email="admin@docuflow.ai",
+                        hashed_password=hash_password("DocuFlow2026!Secure"),
+                        full_name="System Administrator",
+                        role="ADMIN",
+                        tenant_id=default_tenant.id,
+                        is_active=True,
+                    )
+                    analyst = UserModel(
+                        id=uuid.uuid4(),
+                        email="analyst@docuflow.ai",
+                        hashed_password=hash_password("Analyst2026!Secure"),
+                        full_name="Senior Document Analyst",
+                        role="USER",
+                        tenant_id=default_tenant.id,
+                        is_active=True,
+                    )
+                    session.add_all([admin, analyst])
+                    await session.commit()
+                    logger.info("demo_users_seeded", users=["admin@docuflow.ai", "analyst@docuflow.ai"])
+        except Exception as exc:
+            logger.warning("sqlite_init_failed", error=str(exc))
+
     yield
     logger.info("docuflow_shutdown", project=settings.project_name)
 

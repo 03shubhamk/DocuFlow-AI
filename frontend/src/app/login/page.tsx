@@ -4,7 +4,7 @@
  * DocuFlow AI — User Login Page.
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sparkles, Lock, Mail, ArrowRight, AlertCircle } from "lucide-react";
@@ -14,13 +14,19 @@ import { Button } from "../../components/ui/Button";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
   const { success } = useToast();
 
   const [email, setEmail] = useState("admin@docuflow.ai");
   const [password, setPassword] = useState("DocuFlow2026!Secure");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      window.location.href = "/dashboard";
+    }
+  }, [isAuthenticated, authLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +36,7 @@ export default function LoginPage() {
     try {
       await login({ email, password });
       success("Welcome back to DocuFlow AI!", "Authenticated");
-      router.push("/dashboard");
+      window.location.href = "/dashboard";
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Invalid email or password.";
       setErrorMsg(msg);

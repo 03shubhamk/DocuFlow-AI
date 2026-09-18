@@ -25,7 +25,7 @@ import {
 } from "../types/api";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
+  process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
 
 export class ApiError extends Error {
   status: number;
@@ -189,13 +189,17 @@ export const http = {
 /** Dedicated domain services */
 export const api = {
   auth: {
-    async login(payload: { email: string; password: string }): Promise<AuthResponse> {
-      const res = await http.post<AuthResponse>("/auth/login", payload);
-      setStoredTokens(res);
+    async login(payload: { email: string; password: string }): Promise<{ access_token: string; user: User }> {
+      const tokenRes = await http.post<TokenResponse>("/auth/login", payload);
+      setStoredTokens(tokenRes);
+      const user = await http.get<User>("/auth/me");
       if (typeof window !== "undefined") {
-        localStorage.setItem("docuflow_user", JSON.stringify(res.user));
+        localStorage.setItem("docuflow_user", JSON.stringify(user));
       }
-      return res;
+      return {
+        access_token: tokenRes.access_token,
+        user,
+      };
     },
 
     async register(payload: {
@@ -203,13 +207,9 @@ export const api = {
       password: string;
       full_name: string;
       tenant_name?: string;
-    }): Promise<AuthResponse> {
-      const res = await http.post<AuthResponse>("/auth/register", payload);
-      setStoredTokens(res);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("docuflow_user", JSON.stringify(res.user));
-      }
-      return res;
+    }): Promise<{ access_token: string; user: User }> {
+      await http.post<User>("/auth/register", payload);
+      return api.auth.login({ email: payload.email, password: payload.password });
     },
 
     async me(): Promise<User> {

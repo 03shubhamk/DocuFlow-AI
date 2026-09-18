@@ -4,7 +4,7 @@
  * DocuFlow AI — User & Tenant Registration Page.
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sparkles, Lock, Mail, User, Building, ArrowRight, AlertCircle } from "lucide-react";
@@ -14,7 +14,7 @@ import { Button } from "../../components/ui/Button";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { register } = useAuth();
+  const { register, isAuthenticated, isLoading: authLoading } = useAuth();
   const { success } = useToast();
 
   const [fullName, setFullName] = useState("");
@@ -23,6 +23,12 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      window.location.href = "/dashboard";
+    }
+  }, [isAuthenticated, authLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +43,7 @@ export default function RegisterPage() {
         password,
       });
       success("Workspace created successfully! Welcome to DocuFlow AI.", "Registered");
-      router.push("/dashboard");
+      window.location.href = "/dashboard";
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to create account.";
       setErrorMsg(msg);
