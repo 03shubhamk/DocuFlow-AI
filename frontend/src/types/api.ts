@@ -55,6 +55,7 @@ export interface DocumentSummary {
   file_type: string;
   file_size_bytes: number;
   checksum?: string;
+  checksum_sha256?: string;
   version_number?: number;
   created_at: string;
   updated_at: string;
@@ -65,7 +66,8 @@ export interface DocumentVersionSummary {
   id: string;
   version_number: number;
   file_size_bytes: number;
-  checksum: string;
+  checksum?: string;
+  checksum_sha256?: string;
   created_at: string;
 }
 
@@ -119,15 +121,11 @@ export interface DocumentDetailResponse {
 
 export interface DocumentUploadResponse {
   document_id: string;
-  version_id: string;
-  job_id: string;
-  title: string;
-  original_filename: string;
-  file_type: string;
-  file_size_bytes: number;
-  checksum: string;
-  status: ProcessingStatus;
-  created_at: string;
+  version_id?: string;
+  job_id?: string;
+  document?: DocumentSummary;
+  job?: ProcessingJobSummary;
+  message?: string;
 }
 
 export interface PaginationMetadata {

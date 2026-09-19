@@ -131,13 +131,17 @@ export default function UploadDocumentPage() {
     try {
       // 1. Upload to backend
       const uploadRes = await api.documents.upload(selectedFile);
-      setCreatedDocId(uploadRes.document_id);
+      const docId = uploadRes.document_id || (uploadRes as any).document?.id;
+      if (!docId) {
+        throw new Error("Failed to obtain document ID from upload response.");
+      }
+      setCreatedDocId(docId);
       setProgressPercent(40);
       setActiveStage("Parsing layout and AST structures (Docling)...");
       setUploadStatus("processing");
 
       // 2. Trigger asynchronous processing pipeline with custom options
-      await api.documents.process(uploadRes.document_id, {
+      await api.documents.process(docId, {
         do_ocr: doOcr,
         ocr_provider: ocrProvider,
         do_table_structure: doTableStructure,
@@ -152,7 +156,7 @@ export default function UploadDocumentPage() {
       const pollInterval = setInterval(async () => {
         attempts++;
         try {
-          const statusRes = await api.documents.getStatus(uploadRes.document_id);
+          const statusRes = await api.documents.getStatus(docId);
           if (statusRes.status === "COMPLETED") {
             clearInterval(pollInterval);
             setProgressPercent(100);
@@ -162,7 +166,8 @@ export default function UploadDocumentPage() {
           } else if (statusRes.status === "FAILED") {
             clearInterval(pollInterval);
             setUploadStatus("failed");
-            const err = statusRes.errors?.[0]?.error_message || "Document processing pipeline failed.";
+            const rawErr = statusRes.errors?.[0]?.error_message || "Document processing pipeline failed.";
+            const err = typeof rawErr === "object" ? JSON.stringify(rawErr) : String(rawErr);
             setErrorMessage(err);
             toastError(err);
           } else {
@@ -179,7 +184,14 @@ export default function UploadDocumentPage() {
       }, 1500);
     } catch (err: unknown) {
       setUploadStatus("failed");
-      const msg = err instanceof Error ? err.message : "Upload failed.";
+      let msg = "Upload failed.";
+      if (err instanceof Error) {
+        msg = err.message;
+      } else if (typeof err === "string") {
+        msg = err;
+      } else if (typeof err === "object" && err !== null) {
+        msg = JSON.stringify(err);
+      }
       setErrorMessage(msg);
       toastError(msg);
     }

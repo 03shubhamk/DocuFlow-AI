@@ -1,0 +1,162 @@
+[
+  {
+    "chunk_id": "1b92dc0b-8ef4-5231-9c7a-d1c9d111043d",
+    "document_id": "1bf55fd7-362a-4812-a0ad-46915b206921",
+    "version_id": "3d4d5ec3-5568-4d4d-871b-d5e50d893e6b",
+    "chunk_index": 0,
+    "text": "# DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+    "token_count": 15,
+    "heading_hierarchy": [
+      "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026"
+    ],
+    "page_numbers": [
+      1
+    ],
+    "section_path": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+    "chunk_metadata": {
+      "chunk_index": 0,
+      "section_path": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+      "heading_hierarchy": [
+        "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026"
+      ],
+      "page_numbers": [
+        1
+      ],
+      "token_count": 15,
+      "checksum": "113dbbbea2239cc5f8eee157a814692d8c99a29dafa305cbe4b486af4a901aab",
+      "strategy": "hierarchical",
+      "source_document": "Q3_Financial_Performance.md"
+    },
+    "checksum": "113dbbbea2239cc5f8eee157a814692d8c99a29dafa305cbe4b486af4a901aab"
+  },
+  {
+    "chunk_id": "40be862d-e78e-52db-8dd0-f568e43647db",
+    "document_id": "1bf55fd7-362a-4812-a0ad-46915b206921",
+    "version_id": "3d4d5ec3-5568-4d4d-871b-d5e50d893e6b",
+    "chunk_index": 1,
+    "text": "## 1. Overview & Revenue Metrics\n\nDuring the third quarter of 2026, DocuFlow AI demonstrated strong performance across all document intelligence metrics.",
+    "token_count": 31,
+    "heading_hierarchy": [
+      "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+      "1. Overview & Revenue Metrics"
+    ],
+    "page_numbers": [
+      1
+    ],
+    "section_path": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026 > 1. Overview & Revenue Metrics",
+    "chunk_metadata": {
+      "chunk_index": 1,
+      "section_path": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026 > 1. Overview & Revenue Metrics",
+      "heading_hierarchy": [
+        "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+        "1. Overview & Revenue Metrics"
+      ],
+      "page_numbers": [
+        1
+      ],
+      "token_count": 31,
+      "checksum": "963188f83ce057d3f91988e97f247a92749ad2c87370503f8d57eded02b72f3d",
+      "strategy": "hierarchical",
+      "source_document": "Q3_Financial_Performance.md"
+    },
+    "checksum": "963188f83ce057d3f91988e97f247a92749ad2c87370503f8d57eded02b72f3d"
+  },
+  {
+    "chunk_id": "ad9546f6-e436-5737-87e6-f22da346f5d9",
+    "document_id": "1bf55fd7-362a-4812-a0ad-46915b206921",
+    "version_id": "3d4d5ec3-5568-4d4d-871b-d5e50d893e6b",
+    "chunk_index": 2,
+    "text": "### Revenue Summary Table\n\n| Business Unit | Q2 2026 Actual | Q3 2026 Target | Q3 2026 Actual | YoY Growth |\n| :--- | :--- | :--- | :--- | :--- |\n| **Enterprise Subscriptions** | $2.4M | $2.8M | **$3.1M** | +42% |\n| **Document API Ingestion** | $850K | $920K | **$1.05M** | +55% |\n| **On-Premises Dedicated Nodes** | $600K | $650K | **$720K** | +28% |\n| **Total Revenue** | $3.85M | $4.37M | **$4.87M** | **+44%** |\n\n---",
+    "token_count": 171,
+    "heading_hierarchy": [
+      "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+      "1. Overview & Revenue Metrics",
+      "Revenue Summary Table"
+    ],
+    "page_numbers": [
+      1
+    ],
+    "section_path": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026 > 1. Overview & Revenue Metrics > Revenue Summary Table",
+    "chunk_metadata": {
+      "chunk_index": 2,
+      "section_path": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026 > 1. Overview & Revenue Metrics > Revenue Summary Table",
+      "heading_hierarchy": [
+        "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+        "1. Overview & Revenue Metrics",
+        "Revenue Summary Table"
+      ],
+      "page_numbers": [
+        1
+      ],
+      "token_count": 171,
+      "checksum": "d8f43ee2ecfdc0c408193f53cddbc4cf3cf896e0c05399b19ddc25b4440a66b8",
+      "strategy": "hierarchical",
+      "source_document": "Q3_Financial_Performance.md"
+    },
+    "checksum": "d8f43ee2ecfdc0c408193f53cddbc4cf3cf896e0c05399b19ddc25b4440a66b8"
+  },
+  {
+    "chunk_id": "3f4e8de5-9927-5378-b9af-d50d703250e1",
+    "document_id": "1bf55fd7-362a-4812-a0ad-46915b206921",
+    "version_id": "3d4d5ec3-5568-4d4d-871b-d5e50d893e6b",
+    "chunk_index": 3,
+    "text": "## 2. Infrastructure Latency & SLA Guarantees\n\n* **Average Document Processing Time:** 1.15 seconds per 20-page PDF.\n* **Vector Search Latency:** 24ms p95, 38ms p99 across 5,000,000 indexed chunks.\n* **Uptime Compliance:** 99.98% availability against a 99.95% SLA target.\n\n---",
+    "token_count": 84,
+    "heading_hierarchy": [
+      "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+      "2. Infrastructure Latency & SLA Guarantees"
+    ],
+    "page_numbers": [
+      1
+    ],
+    "section_path": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026 > 2. Infrastructure Latency & SLA Guarantees",
+    "chunk_metadata": {
+      "chunk_index": 3,
+      "section_path": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026 > 2. Infrastructure Latency & SLA Guarantees",
+      "heading_hierarchy": [
+        "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+        "2. Infrastructure Latency & SLA Guarantees"
+      ],
+      "page_numbers": [
+        1
+      ],
+      "token_count": 84,
+      "checksum": "d2680a88493440f522adb54c3b186e5f16bd4dc8f7b10cb46054992cc8e93977",
+      "strategy": "hierarchical",
+      "source_document": "Q3_Financial_Performance.md"
+    },
+    "checksum": "d2680a88493440f522adb54c3b186e5f16bd4dc8f7b10cb46054992cc8e93977"
+  },
+  {
+    "chunk_id": "b608cb18-9c7b-5b91-bdfe-f912f007adee",
+    "document_id": "1bf55fd7-362a-4812-a0ad-46915b206921",
+    "version_id": "3d4d5ec3-5568-4d4d-871b-d5e50d893e6b",
+    "chunk_index": 4,
+    "text": "## 3. Compliance and Legal Obligations\n\n1. **Data Retention Policy:** Documents marked for soft-deletion are expunged from MinIO object storage after a 30-day grace period.\n2. **Audit Trails:** All user logins, document views, chunk searches, and exports are immutably logged to the `audit_logs` table.",
+    "token_count": 74,
+    "heading_hierarchy": [
+      "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+      "3. Compliance and Legal Obligations"
+    ],
+    "page_numbers": [
+      1
+    ],
+    "section_path": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026 > 3. Compliance and Legal Obligations",
+    "chunk_metadata": {
+      "chunk_index": 4,
+      "section_path": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026 > 3. Compliance and Legal Obligations",
+      "heading_hierarchy": [
+        "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+        "3. Compliance and Legal Obligations"
+      ],
+      "page_numbers": [
+        1
+      ],
+      "token_count": 74,
+      "checksum": "3bbf837420733bf14c8a053388d925c715c0b4804b8c61716cfddda6d05c985f",
+      "strategy": "hierarchical",
+      "source_document": "Q3_Financial_Performance.md"
+    },
+    "checksum": "3bbf837420733bf14c8a053388d925c715c0b4804b8c61716cfddda6d05c985f"
+  }
+]

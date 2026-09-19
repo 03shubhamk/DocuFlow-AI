@@ -33,7 +33,7 @@ def build_engine(settings: Settings, use_null_pool: bool = False):
     }
 
     if "sqlite" in settings.database_url:
-        kwargs["connect_args"] = {"check_same_thread": False}
+        kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30.0}
         if ":memory:" in settings.database_url:
             from sqlalchemy.pool import StaticPool
 

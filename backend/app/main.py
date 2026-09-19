@@ -66,6 +66,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
             engine = build_engine(settings)
             async with engine.begin() as conn:
+                await conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
+                await conn.exec_driver_sql("PRAGMA busy_timeout=10000;")
                 await conn.run_sync(Base.metadata.create_all)
 
             session_factory = build_session_factory(engine)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
@@ -208,6 +209,9 @@ class DocumentService:
         return DocumentUploadResponse(
             document=DocumentResponse.model_validate(doc_model),
             job=ProcessingJobSummary.model_validate(job_model),
+            document_id=doc_model.id,
+            version_id=version_model.id,
+            job_id=job_model.id,
             message="Document uploaded successfully and queued for processing.",
         )
 
@@ -718,16 +722,57 @@ class DocumentService:
             await self.session.commit()
             await self.session.refresh(job)
 
-        # Dispatch Celery background task
-        try:
-            from app.infrastructure.tasks.parsing_tasks import process_document_task
+        # Dispatch Celery background task or async background execution
+        dispatched = False
+        if self.settings.environment != "development":
+            try:
+                from app.infrastructure.tasks.parsing_tasks import process_document_task
 
-            task = process_document_task.delay(str(job.id), str(doc.id), str(version.id))
-            job.celery_task_id = task.id
-            await self.session.commit()
-            await self.session.refresh(job)
-        except Exception as queue_err:
-            logger.warning("celery_dispatch_skipped_or_failed", error=str(queue_err))
+                task = process_document_task.delay(str(job.id), str(doc.id), str(version.id))
+                job.celery_task_id = task.id
+                await self.session.commit()
+                await self.session.refresh(job)
+                dispatched = True
+            except Exception as queue_err:
+                logger.warning("celery_dispatch_skipped_or_failed", error=str(queue_err))
+
+        if not dispatched:
+            doc_id = doc.id
+            ver_id = version.id
+            proc_options = None
+            if options:
+                proc_options = ProcessingOptions(
+                    do_ocr=options.do_ocr if options.do_ocr is not None else self.settings.ocr_enabled,
+                    ocr_provider=options.ocr_provider or self.settings.ocr_provider,
+                    extract_figures=options.extract_figures,
+                    do_table_structure=options.do_table_structure,
+                )
+
+            async def _bg_run():
+                from app.infrastructure.database.session import build_engine, build_session_factory
+                from app.infrastructure.storage import get_storage
+                from app.infrastructure.processors import get_document_processor
+                settings = get_settings()
+                engine = build_engine(settings, use_null_pool=True)
+                factory = build_session_factory(engine)
+                try:
+                    async with factory() as bg_session:
+                        bg_service = DocumentService(
+                            session=bg_session,
+                            storage=get_storage(),
+                            processor=get_document_processor(),
+                        )
+                        await bg_service.process_document_version(
+                            document_id=doc_id,
+                            version_id=ver_id,
+                            options=proc_options,
+                        )
+                except Exception as e:
+                    logger.error("background_processing_failed", error=str(e), exc_info=True)
+                finally:
+                    await engine.dispose()
+
+            asyncio.create_task(_bg_run())
 
         return ProcessingJobSummary.model_validate(job)
 

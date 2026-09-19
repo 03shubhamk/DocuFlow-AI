@@ -1,0 +1,56 @@
+{
+  "title": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+  "filename": "Q3_Financial_Performance.md",
+  "file_type": ".md",
+  "page_count": 1,
+  "language": "en",
+  "section_hierarchy": [
+    {
+      "title": "DocuFlow Financial Performance & Operations Report \u2014 Q3 2026",
+      "level": 1,
+      "page": 1,
+      "children": [
+        {
+          "title": "1. Overview & Revenue Metrics",
+          "level": 2,
+          "page": 1,
+          "children": [
+            {
+              "title": "Revenue Summary Table",
+              "level": 3,
+              "page": 1,
+              "children": []
+            }
+          ]
+        },
+        {
+          "title": "2. Infrastructure Latency & SLA Guarantees",
+          "level": 2,
+          "page": 1,
+          "children": []
+        },
+        {
+          "title": "3. Compliance and Legal Obligations",
+          "level": 2,
+          "page": 1,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "table_count": 1,
+  "figure_count": 0,
+  "word_count": 201,
+  "character_count": 1221,
+  "checksum": "06c10d6d48759299be1cae70e4f98a842de6b58448c76390f0f2c67aec898c3a",
+  "processing_version": "1.0.0",
+  "parser_version": "docling-2.x",
+  "creation_date": null,
+  "update_date": null,
+  "custom_metadata": {},
+  "chunk_count": 5,
+  "total_tokens": 375,
+  "avg_chunk_tokens": 75.0,
+  "chunking_strategy": "hierarchical",
+  "duration_ms": 0.31
+}

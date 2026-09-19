@@ -75,10 +75,13 @@ class DocumentResponse(BaseModel):
 
 
 class DocumentUploadResponse(BaseModel):
-    """Response returned immediately after document upload."""
+    """Response returned upon successful document upload."""
 
     document: DocumentResponse
     job: ProcessingJobSummary
+    document_id: uuid.UUID | None = None
+    version_id: uuid.UUID | None = None
+    job_id: uuid.UUID | None = None
     message: str = "Document uploaded successfully and queued for processing."
 
 
@@ -131,10 +134,16 @@ class ProcessingErrorSummary(BaseModel):
 class ProcessDocumentRequest(BaseModel):
     """Optional configuration overrides for document processing."""
 
+    model_config = ConfigDict(extra="ignore")
+
     do_ocr: bool | None = None
     ocr_provider: str | None = None
     extract_figures: bool = True
     do_table_structure: bool = True
+    chunking_strategy: str | None = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+
 
 
 class ProcessingStatusResponse(BaseModel):

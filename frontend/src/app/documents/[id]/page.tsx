@@ -338,7 +338,7 @@ export default function DocumentDetailPage({
                 >
                   <span>Version {ver.version_number}</span>
                   <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
-                    {ver.checksum.substring(0, 12)}...
+                    {(ver.checksum_sha256 || ver.checksum || "").substring(0, 12)}...
                   </span>
                 </div>
               ))}

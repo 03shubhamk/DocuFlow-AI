@@ -91,7 +91,8 @@ async function handleResponse<T>(response: Response): Promise<T> {
       status?: number;
       type?: string;
       title?: string;
-      detail?: string;
+      detail?: any;
+      message?: string;
       correlation_id?: string;
     };
     try {
@@ -102,11 +103,27 @@ async function handleResponse<T>(response: Response): Promise<T> {
         detail: response.statusText || "Unexpected network error",
       };
     }
+
+    let formattedDetail = "";
+    if (typeof errorBody.detail === "string") {
+      formattedDetail = errorBody.detail;
+    } else if (Array.isArray(errorBody.detail)) {
+      formattedDetail = errorBody.detail
+        .map((e: any) => (e && typeof e === "object" ? (e.msg || e.detail || JSON.stringify(e)) : String(e)))
+        .join("; ");
+    } else if (errorBody.detail && typeof errorBody.detail === "object") {
+      formattedDetail = JSON.stringify(errorBody.detail);
+    } else if (typeof errorBody.message === "string") {
+      formattedDetail = errorBody.message;
+    } else {
+      formattedDetail = response.statusText || "An API error occurred";
+    }
+
     throw new ApiError({
       status: response.status,
       type: errorBody.type,
       title: errorBody.title,
-      detail: errorBody.detail || response.statusText,
+      detail: formattedDetail,
       correlation_id: errorBody.correlation_id,
     });
   }
