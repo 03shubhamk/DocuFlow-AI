@@ -91,14 +91,27 @@ class Settings(BaseSettings):
     )
 
     # -------------------------------------------------------------------------
-    # Object Storage — S3 / MinIO
+    # Object Storage — S3 / MinIO / InMemory
     # -------------------------------------------------------------------------
+    storage_backend: str = Field(
+        default="auto",
+        description="Storage provider: auto, minio, s3, memory, local, filesystem",
+    )
     s3_endpoint_url: str | None = Field(default="http://localhost:9000")
     s3_access_key_id: str = Field(default="minioadmin", description="S3 / MinIO access key")
     s3_secret_access_key: str = Field(default="minioadmin", description="S3 / MinIO secret key")
     s3_bucket_documents: str = Field(default="docuflow-documents")
     s3_region: str = Field(default="us-east-1")
     s3_secure: bool = Field(default=False)
+
+    @field_validator("storage_backend")
+    @classmethod
+    def validate_storage_backend(cls, v: str) -> str:
+        allowed = {"auto", "minio", "s3", "memory", "local", "filesystem"}
+        val = v.lower().strip()
+        if val not in allowed:
+            raise ValueError(f"storage_backend must be one of {allowed}")
+        return val
 
     # -------------------------------------------------------------------------
     # Qdrant Vector Database

@@ -25,6 +25,13 @@ router = APIRouter(prefix="/health", tags=["health"])
 logger = get_logger(__name__)
 
 
+@router.get("", summary="Health overview")
+@router.get("/", summary="Health overview slash")
+async def health_index() -> dict[str, str]:
+    """Basic health check endpoint."""
+    return {"status": "ok", "service": "docuflow-api"}
+
+
 @router.get("/live", summary="Liveness probe")
 async def liveness() -> dict[str, str]:
     """Returns 200 OK if the process is alive."""
