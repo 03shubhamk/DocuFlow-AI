@@ -53,6 +53,10 @@ postgres_data/
 minio_data/
 qdrant_data/
 redis_data/
+data/
+*.db-shm
+*.db-wal
+*.db-journal
 
 # IDE / OS
 .idea/
