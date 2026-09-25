@@ -46,11 +46,13 @@ class DoclingDocumentProcessor(DocumentProcessor):
             pipeline_options.do_table_structure = options.do_table_structure
             pipeline_options.generate_picture_images = options.extract_figures
 
-            # Configure OCR backend
+            # Configure OCR backend with runtime availability check
             if options.do_ocr and options.ocr_provider != "none":
                 ocr_prov = options.ocr_provider.lower()
                 try:
                     if ocr_prov == "easyocr":
+                        import easyocr  # Verify easyocr is importable
+
                         from docling.datamodel.pipeline_options import EasyOcrOptions
 
                         pipeline_options.ocr_options = EasyOcrOptions(lang=options.ocr_languages)
@@ -63,7 +65,10 @@ class DoclingDocumentProcessor(DocumentProcessor):
 
                         pipeline_options.ocr_options = RapidOcrOptions()
                 except (ImportError, Exception) as ocr_err:
-                    logger.warning("ocr_provider_init_failed", provider=ocr_prov, error=str(ocr_err))
+                    logger.warning("ocr_provider_unavailable_disabling_ocr", provider=ocr_prov, error=str(ocr_err))
+                    pipeline_options.do_ocr = False
+            else:
+                pipeline_options.do_ocr = False
 
             format_options: dict[Any, Any] = {
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
@@ -107,8 +112,24 @@ class DoclingDocumentProcessor(DocumentProcessor):
             conv_result = await asyncio.to_thread(_sync_convert)
             docling_doc = conv_result.document
         except Exception as e:
-            logger.error("docling_conversion_failed", path=str(source_path), error=str(e))
-            raise RuntimeError(f"Docling processing failed for '{source_path.name}': {e}") from e
+            err_str = str(e)
+            if "easyocr" in err_str.lower() or "ocr" in err_str.lower() or "no module named" in err_str.lower():
+                logger.warning("retrying_docling_without_ocr", error=err_str)
+                no_ocr_opts = ProcessingOptions(
+                    do_ocr=False,
+                    ocr_provider="none",
+                    do_table_structure=opts.do_table_structure,
+                    extract_figures=opts.extract_figures,
+                )
+                retry_converter = self._build_converter(no_ocr_opts)
+                if retry_converter is not None:
+                    conv_result = await asyncio.to_thread(lambda: retry_converter.convert(source_path))
+                    docling_doc = conv_result.document
+                else:
+                    raise RuntimeError(f"Docling processing failed for '{source_path.name}': {e}") from e
+            else:
+                logger.error("docling_conversion_failed", path=str(source_path), error=err_str)
+                raise RuntimeError(f"Docling processing failed for '{source_path.name}': {e}") from e
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 

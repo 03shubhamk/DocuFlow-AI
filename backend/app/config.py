@@ -206,8 +206,8 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Docling & OCR Configuration
     # -------------------------------------------------------------------------
-    ocr_enabled: bool = Field(default=True, description="Enable OCR for scanned documents and images")
-    ocr_provider: str = Field(default="easyocr", description="OCR backend: easyocr, tesseract, rapidocr, none")
+    ocr_enabled: bool = Field(default=False, description="Enable OCR for scanned documents and images")
+    ocr_provider: str = Field(default="auto", description="OCR backend: easyocr, tesseract, rapidocr, none, auto")
     ocr_languages: list[str] = Field(default=["en"], description="List of OCR language codes")
     docling_artifacts_path: str = Field(default="artifacts", description="Sub-path for generated Docling artifacts")
     docling_max_workers: int = Field(default=4, description="Max concurrent threads for Docling conversions")
