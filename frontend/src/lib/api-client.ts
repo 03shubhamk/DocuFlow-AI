@@ -9,6 +9,8 @@
 import {
   AuthResponse,
   BuildInfo,
+  ChatRequest,
+  ChatResponse,
   DocumentChunkListResponse,
   DocumentDetailResponse,
   DocumentListResponse,
@@ -331,6 +333,10 @@ export const api = {
   search: {
     async query(payload: SearchRequest, signal?: AbortSignal): Promise<SearchResponse> {
       return http.post<SearchResponse>("/search", payload, signal);
+    },
+
+    async chat(payload: ChatRequest, signal?: AbortSignal): Promise<ChatResponse> {
+      return http.post<ChatResponse>("/search/chat", payload, signal);
     },
   },
 
