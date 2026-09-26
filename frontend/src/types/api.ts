@@ -242,14 +242,47 @@ export interface SearchResultItem {
   metadata: Record<string, unknown>;
 }
 
+export interface QACitation {
+  citation_id: number;
+  chunk_id?: string | null;
+  document_id: string;
+  document_name: string;
+  page_number?: number | null;
+  section?: string | null;
+  score: number;
+  snippet: string;
+}
+
 export interface SearchResponse {
   query: string;
-  total_results: number;
+  total_results?: number;
+  total?: number;
   page: number;
   page_size: number;
-  strategy: string;
+  strategy?: string;
+  strategy_used?: string;
   duration_ms: number;
   results: SearchResultItem[];
+  ai_answer?: string | null;
+  citations?: QACitation[];
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+export interface ChatRequest {
+  messages: ChatMessage[];
+  document_ids?: string[];
+  top_k?: number;
+}
+
+export interface ChatResponse {
+  message: string;
+  citations: QACitation[];
+  confidence: number;
+  source_chunks_count: number;
 }
 
 export interface HealthStatus {
