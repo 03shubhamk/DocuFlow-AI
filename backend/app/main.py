@@ -113,6 +113,53 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     session.add_all([admin, analyst])
                     await session.commit()
                     logger.info("demo_users_seeded", users=["admin@docuflow.ai", "analyst@docuflow.ai"])
+
+                # 3. Ensure existing document chunks are synced into vector store
+                try:
+                    from app.infrastructure.database.models import DocumentModel, DocumentChunkModel
+                    from app.infrastructure.vectorstore import get_vector_store
+                    from app.infrastructure.vectorstore.base import VectorPoint
+                    from app.application.embeddings.service import EmbeddingService
+
+                    vector_store = get_vector_store()
+                    vector_count = await vector_store.count()
+                    if vector_count == 0:
+                        docs = (await session.execute(select(DocumentModel))).scalars().all()
+                        embedding_service = EmbeddingService()
+                        total_indexed = 0
+                        for doc in docs:
+                            chunks = (await session.execute(
+                                select(DocumentChunkModel).where(DocumentChunkModel.document_id == doc.id)
+                            )).scalars().all()
+                            if not chunks:
+                                continue
+                            texts = [c.content for c in chunks]
+                            embeddings = await embedding_service.generate_embeddings(texts)
+                            points = []
+                            for c, emb in zip(chunks, embeddings):
+                                pt_id = uuid.uuid4()
+                                payload = {
+                                    "document_id": str(doc.id),
+                                    "version_id": str(c.version_id) if c.version_id else "",
+                                    "tenant_id": str(doc.tenant_id),
+                                    "user_id": str(doc.owner_id) if doc.owner_id else "",
+                                    "chunk_id": str(c.id),
+                                    "chunk_index": c.chunk_index,
+                                    "filename": doc.original_filename or doc.title or "Document",
+                                    "mime_type": doc.file_type or "application/pdf",
+                                    "text": c.content,
+                                    "token_count": c.token_count,
+                                    "page_number": c.page_numbers[0] if c.page_numbers else 1,
+                                    "page_numbers": c.page_numbers or [],
+                                    "heading_hierarchy": c.heading_hierarchy or [],
+                                    "section_path": c.heading_hierarchy[-1] if c.heading_hierarchy else None,
+                                }
+                                points.append(VectorPoint(id=pt_id, vector=emb, payload=payload))
+                            await vector_store.upsert_vectors(points)
+                            total_indexed += len(points)
+                        logger.info("vector_store_auto_hydrated", total_points=total_indexed)
+                except Exception as exc:
+                    logger.warning("vector_store_hydration_failed", error=str(exc))
         except Exception as exc:
             logger.warning("sqlite_init_failed", error=str(exc))
 
