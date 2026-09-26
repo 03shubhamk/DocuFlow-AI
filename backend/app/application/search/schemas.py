@@ -67,6 +67,52 @@ class SearchResultItem(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class QACitation(BaseModel):
+    """Citation reference linked to source document chunk."""
+
+    citation_id: int
+    chunk_id: uuid.UUID | None = None
+    document_id: uuid.UUID
+    document_name: str
+    page_number: int | None = None
+    section: str | None = None
+    score: float
+    snippet: str
+
+
+class QAResponse(BaseModel):
+    """Synthesized natural language answer with source citations."""
+
+    answer: str
+    confidence: float
+    citations: list[QACitation] = Field(default_factory=list)
+    summary: str | None = None
+
+
+class ChatMessage(BaseModel):
+    """A single chat message in conversational Q&A."""
+
+    role: str  # "user" | "assistant" | "system"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    """Payload for conversational Q&A over document library."""
+
+    messages: list[ChatMessage]
+    document_ids: list[uuid.UUID] = Field(default_factory=list)
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+class ChatResponse(BaseModel):
+    """Conversational chat response with grounded sources."""
+
+    message: str
+    citations: list[QACitation] = Field(default_factory=list)
+    confidence: float
+    source_chunks_count: int
+
+
 class SearchResponse(BaseModel):
     """Structured response container for search results."""
 
@@ -78,6 +124,8 @@ class SearchResponse(BaseModel):
     page_size: int | None = None
     strategy_used: str
     duration_ms: float
+    ai_answer: str | None = None
+    citations: list[QACitation] = Field(default_factory=list)
 
 
 class DocumentStructureResponse(BaseModel):
@@ -96,3 +144,4 @@ class DocumentStructureResponse(BaseModel):
     table_count: int
     figure_count: int
     section_hierarchy: list[dict[str, Any]] = Field(default_factory=list)
+
