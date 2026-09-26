@@ -14,7 +14,10 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.embeddings.service import EmbeddingService
+from app.application.search.qa_service import QAService
 from app.application.search.schemas import (
+    ChatRequest,
+    ChatResponse,
     SearchRequest,
     SearchResponse,
     SearchResultItem,
@@ -37,7 +40,7 @@ logger = structlog.get_logger(__name__)
 
 
 class SearchService:
-    """Service layer managing secure, isolated document search and ranking."""
+    """Service layer managing secure, isolated document search, RAG synthesis, and ranking."""
 
     def __init__(
         self,
@@ -46,6 +49,7 @@ class SearchService:
         embedding_service: EmbeddingService | None = None,
         dense_strategy: SearchStrategy | None = None,
         hybrid_strategy: SearchStrategy | None = None,
+        qa_service: QAService | None = None,
     ) -> None:
         self.session = session
         self.settings = get_settings()
@@ -56,8 +60,51 @@ class SearchService:
             dense_weight=self.settings.search_hybrid_dense_weight,
             sparse_weight=self.settings.search_hybrid_sparse_weight,
         )
+        self.qa_service = qa_service or QAService()
         self.document_repo = DocumentRepository(session)
         self.audit_repo = AuditLogRepository(session)
+
+    async def _ensure_hydrated(self) -> None:
+        """Ensure vector store has points loaded from SQLite if running in memory store."""
+        try:
+            count = await self.vector_store.count()
+            if count == 0:
+                from sqlalchemy import select
+                from app.infrastructure.database.models import DocumentModel, DocumentChunkModel
+                from app.infrastructure.vectorstore.base import VectorPoint
+
+                docs = (await self.session.execute(select(DocumentModel))).scalars().all()
+                for doc in docs:
+                    chunks = (await self.session.execute(
+                        select(DocumentChunkModel).where(DocumentChunkModel.document_id == doc.id)
+                    )).scalars().all()
+                    if not chunks:
+                        continue
+                    texts = [c.content for c in chunks]
+                    embeddings = await self.embedding_service.generate_embeddings(texts)
+                    points = []
+                    for c, emb in zip(chunks, embeddings):
+                        pt_id = uuid.uuid4()
+                        payload = {
+                            "document_id": str(doc.id),
+                            "version_id": str(c.version_id) if c.version_id else "",
+                            "tenant_id": str(doc.tenant_id),
+                            "user_id": str(doc.owner_id) if doc.owner_id else "",
+                            "chunk_id": str(c.id),
+                            "chunk_index": c.chunk_index,
+                            "filename": doc.original_filename or doc.title or "Document",
+                            "mime_type": doc.file_type or "application/pdf",
+                            "text": c.content,
+                            "token_count": c.token_count,
+                            "page_number": c.page_numbers[0] if c.page_numbers else 1,
+                            "page_numbers": c.page_numbers or [],
+                            "heading_hierarchy": c.heading_hierarchy or [],
+                            "section_path": c.heading_hierarchy[-1] if c.heading_hierarchy else None,
+                        }
+                        points.append(VectorPoint(id=pt_id, vector=emb, payload=payload))
+                    await self.vector_store.upsert_vectors(points)
+        except Exception as exc:
+            logger.warning("vector_store_auto_hydrate_failed", error=str(exc))
 
     async def search(
         self,
@@ -102,7 +149,10 @@ class SearchService:
                     duration_ms=duration_ms,
                 )
 
-        # 3. Construct filter criteria
+        # 3. Ensure vector store is hydrated
+        await self._ensure_hydrated()
+
+        # 4. Construct filter criteria
         filter_criteria = dict(request.filters or {})
         if filter_doc_ids:
             filter_criteria["document_ids"] = filter_doc_ids
@@ -205,6 +255,12 @@ class SearchService:
             duration_ms=duration_ms,
         )
 
+        # 10. Generate synthesized natural language AI answer and citations
+        qa_output = self.qa_service.generate_answer(
+            query=request.query,
+            results=results,
+        )
+
         return SearchResponse(
             results=paginated_results,
             total=total,
@@ -214,4 +270,35 @@ class SearchService:
             page_size=page_size_val,
             strategy_used=active_strategy.strategy_name,
             duration_ms=duration_ms,
+            ai_answer=qa_output.answer,
+            citations=qa_output.citations,
+        )
+
+    async def chat(
+        self,
+        request: ChatRequest,
+        current_user: User,
+    ) -> ChatResponse:
+        """Process a conversational chat query grounded in accessible document knowledge."""
+        if not request.messages:
+            return ChatResponse(
+                message="Please ask a question about your documents.",
+                citations=[],
+                confidence=0.0,
+                source_chunks_count=0,
+            )
+
+        latest_user_query = request.messages[-1].content
+
+        # Retrieve relevant context
+        search_req = SearchRequest(
+            query=latest_user_query,
+            top_k=request.top_k,
+            document_ids=request.document_ids,
+        )
+        search_res = await self.search(search_req, current_user)
+
+        return self.qa_service.generate_chat_response(
+            messages=request.messages,
+            results=search_res.results,
         )
